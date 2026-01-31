@@ -23,7 +23,8 @@ class SchedulingViewModel @Inject constructor(
     private val communicationManager: CommunicationManager,
     private val backgroundManager: BackgroundManager,
     private val contactHelper: ContactHelper,
-    private val ttsManager: TtsManager
+    private val ttsManager: TtsManager,
+    private val cabBookingManager: CabBookingManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SchedulingUiState())
@@ -44,7 +45,7 @@ class SchedulingViewModel @Inject constructor(
 
     fun handleVoiceCommand(text: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(lastVoiceCommandResult = "ANALYZING NEURAL INPUT...")
+            _uiState.value = _uiState.value.copy(lastVoiceCommandResult = "ANALYZING...")
             val result = voiceProcessor.parse(text)
             
             when (result) {
@@ -61,7 +62,7 @@ class SchedulingViewModel @Inject constructor(
                     ttsManager.speak("SCANNING TEMPORAL DATA.")
                     backgroundManager.queryCalendarEvents(result.startTime, result.endTime).onSuccess { events ->
                         if (events.isEmpty()) {
-                            speakAndConfirm("NO TEMPORAL DATA DETECTED FOR SPECIFIED RANGE.")
+                            speakAndConfirm("NO TEMPORAL DATA DETECTED.")
                         } else {
                             val eventTitles = events.joinToString(", ") { "${it.title} AT ${formatTime(it.startTime)}" }
                             speakAndConfirm("DATA RETRIEVED: $eventTitles.")
@@ -72,15 +73,15 @@ class SchedulingViewModel @Inject constructor(
                 is IntentResult.CalendarDelete -> {
                     ttsManager.speak("INITIATING PURGE FOR ${result.title.uppercase()}.")
                     backgroundManager.deleteCalendarEvent(result.title).onSuccess { count ->
-                        if (count > 0) speakAndConfirm("PURGE SUCCESSFUL. ${result.title.uppercase()} REMOVED.")
+                        if (count > 0) speakAndConfirm("PURGE SUCCESSFUL. REMOVED $count EVENTS.")
                         else speakAndConfirm("PURGE FAILED. TARGET NOT FOUND.")
                     }
                 }
 
                 is IntentResult.CalendarRangeDelete -> {
-                    ttsManager.speak("INITIATING GLOBAL PURGE FOR SPECIFIED RANGE.")
+                    ttsManager.speak("INITIATING GLOBAL PURGE FOR THE SPECIFIED RANGE.")
                     backgroundManager.deleteCalendarEventsInRange(result.startTime, result.endTime).onSuccess { count ->
-                        if (count > 0) speakAndConfirm("GLOBAL PURGE COMPLETE. $count EVENTS REMOVED.")
+                        if (count > 0) speakAndConfirm("GLOBAL PURGE COMPLETE. $count MEETINGS REMOVED.")
                         else speakAndConfirm("SPECIFIED RANGE IS ALREADY VOID.")
                     }
                 }
@@ -88,26 +89,41 @@ class SchedulingViewModel @Inject constructor(
                 is IntentResult.SendMessage -> {
                     val contact = contactHelper.findContact(result.recipient)
                     val target = contact?.phone ?: contact?.email ?: result.recipient
-                    speakAndConfirm("ROUTING COMMUNICATION TO ${contact?.name?.uppercase() ?: result.recipient.uppercase()}.")
+                    val recipientName = contact?.name?.uppercase() ?: result.recipient.uppercase()
+                    speakAndConfirm("SENDING ${result.app} MESSAGE TO $recipientName SAYING ${result.message.uppercase()}.")
                     communicationManager.sendMessage(result.app, target, result.message)
                 }
 
                 is IntentResult.LastMessageQuery -> {
-                    speakAndConfirm("RETRIEVING ENCRYPTED DATA FROM ${result.contactName.uppercase()}.")
-                    ttsManager.speak("LATEST LOG FROM ${result.contactName.uppercase()}: HELLO, SEE YOU SOON.")
+                    val appName = if (result.app == com.example.myapplication.plugin.CommunicationApp.WHATSAPP) "WhatsApp" else "Gmail"
+                    speakAndConfirm("RETRIEVING ENCRYPTED DATA FROM $appName.")
+                    val lastMsg = NotificationService.getLastMessageFrom(result.contactName, appName)
+                    if (lastMsg != null) {
+                        ttsManager.speak("THE LAST MESSAGE FROM ${lastMsg.sender.uppercase()} WAS: ${lastMsg.text.uppercase()}")
+                    } else {
+                        ttsManager.speak("NO RECENT DATA DETECTED FROM ${result.contactName.uppercase()}.")
+                    }
                 }
 
                 is IntentResult.Call -> {
                     val contact = contactHelper.findContact(result.recipient)
                     val target = contact?.phone ?: result.recipient
-                    ttsManager.speak("INITIATING VOICE LINK TO ${contact?.name?.uppercase() ?: result.recipient.uppercase()}.")
+                    speakAndConfirm("INITIATING VOICE LINK TO ${contact?.name?.uppercase() ?: result.recipient.uppercase()}.")
                     backgroundManager.makeCallWithSim(target, result.simIndex)
                 }
 
-                is IntentResult.Unrecognized -> {
-                    ttsManager.speak("NEURAL INPUT UNRECOGNIZED: $text")
+                is IntentResult.BookCab -> {
+                    speakAndConfirm("INITIALIZING CAB PROTOCOL. LAUNCHING ${result.provider} TO ${result.destination.uppercase()}.")
+                    cabBookingManager.bookCab(result.provider, result.destination)
                 }
-                else -> {}
+
+                is IntentResult.Unrecognized -> {
+                    ttsManager.speak("NEURAL INPUT UNRECOGNIZED.")
+                    _uiState.value = _uiState.value.copy(lastVoiceCommandResult = "IDLE")
+                }
+                else -> {
+                    _uiState.value = _uiState.value.copy(lastVoiceCommandResult = "IDLE")
+                }
             }
         }
     }

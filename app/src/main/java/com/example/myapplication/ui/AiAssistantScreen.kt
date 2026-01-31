@@ -33,10 +33,8 @@ import com.example.myapplication.ui.theme.*
 @Composable
 fun AiAssistantScreen(viewModel: SchedulingViewModel, onVoiceRequest: () -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
-    var isListening by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    // Play Store Policy: Sensitive permissions list
     val permissions = arrayOf(
         Manifest.permission.RECORD_AUDIO,
         Manifest.permission.READ_CALENDAR,
@@ -54,10 +52,6 @@ fun AiAssistantScreen(viewModel: SchedulingViewModel, onVoiceRequest: () -> Unit
         }
     }
 
-    LaunchedEffect(uiState.lastVoiceCommandResult) {
-        if (uiState.lastVoiceCommandResult != null) isListening = false
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -69,25 +63,7 @@ fun AiAssistantScreen(viewModel: SchedulingViewModel, onVoiceRequest: () -> Unit
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF0A0A0F),
-                            DeepBlack
-                        )
-                    )
-                )
-        )
-
-        // Radial glow
-        Box(
-            modifier = Modifier
-                .size(600.dp)
-                .align(Alignment.Center)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            ElectricCyan.copy(alpha = 0.05f),
-                            Color.Transparent
-                        )
+                        colors = listOf(Color(0xFF0A0A0F), DeepBlack)
                     )
                 )
         )
@@ -107,7 +83,7 @@ fun AiAssistantScreen(viewModel: SchedulingViewModel, onVoiceRequest: () -> Unit
                         .border(1.dp, ElectricCyan.copy(alpha = 0.1f), CircleShape)
                 )
                 AiLivingCore(
-                    isListening = isListening,
+                    isListening = false,
                     modifier = Modifier.size(200.dp)
                 )
             }
@@ -116,7 +92,7 @@ fun AiAssistantScreen(viewModel: SchedulingViewModel, onVoiceRequest: () -> Unit
 
             // Status Text
             Text(
-                text = if (isListening) "SYSTEM SCANNING..." else "KIWI CORE ONLINE",
+                text = "APPLE CORE ONLINE",
                 color = SoftNeonWhite.copy(alpha = 0.8f),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
@@ -153,7 +129,7 @@ fun AiAssistantScreen(viewModel: SchedulingViewModel, onVoiceRequest: () -> Unit
 
             Spacer(modifier = Modifier.height(40.dp))
 
-            // Task Matrix
+            // Task Matrix (Log of recent actions)
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
@@ -193,7 +169,7 @@ fun AiAssistantScreen(viewModel: SchedulingViewModel, onVoiceRequest: () -> Unit
                                     letterSpacing = 1.sp
                                 )
                                 Text(
-                                    text = "ACTION_TYPE: ${appointment.type.slug.uppercase()}",
+                                    text = "ACTION_TYPE: EXECUTED",
                                     color = ElectricCyan.copy(alpha = 0.5f),
                                     fontSize = 10.sp,
                                     letterSpacing = 1.sp
@@ -224,7 +200,6 @@ fun AiAssistantScreen(viewModel: SchedulingViewModel, onVoiceRequest: () -> Unit
                         if (missing.isNotEmpty()) {
                             permissionLauncher.launch(missing.toTypedArray())
                         } else {
-                            isListening = true
                             onVoiceRequest()
                         }
                     },

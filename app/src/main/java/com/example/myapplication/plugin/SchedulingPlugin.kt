@@ -36,6 +36,7 @@ sealed class IntentResult {
     ) : IntentResult()
     data class LastMessageQuery(val app: CommunicationApp, val contactName: String) : IntentResult()
     data class Call(val recipient: String, val simIndex: Int = 1) : IntentResult()
+    data class BookCab(val provider: String, val destination: String) : IntentResult()
     data class Query(val query: String) : IntentResult()
     data class Unrecognized(val rawText: String) : IntentResult()
 }

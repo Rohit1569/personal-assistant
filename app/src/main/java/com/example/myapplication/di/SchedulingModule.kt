@@ -1,10 +1,7 @@
 package com.example.myapplication.di
 
 import android.content.Context
-import com.example.myapplication.communication.BackgroundManager
-import com.example.myapplication.communication.CommunicationManager
-import com.example.myapplication.communication.ContactHelper
-import com.example.myapplication.communication.TtsManager
+import com.example.myapplication.communication.*
 import com.example.myapplication.data.SchedulingRepository
 import com.example.myapplication.data.SchedulingRepositoryImpl
 import com.example.myapplication.voice.VoiceIntentProcessor
@@ -53,5 +50,11 @@ object SchedulingModule {
     @Singleton
     fun provideTtsManager(@ApplicationContext context: Context): TtsManager {
         return TtsManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideCabBookingManager(@ApplicationContext context: Context): CabBookingManager {
+        return CabBookingManager(context)
     }
 }
