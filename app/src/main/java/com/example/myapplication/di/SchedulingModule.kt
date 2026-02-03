@@ -57,4 +57,10 @@ object SchedulingModule {
     fun provideCabBookingManager(@ApplicationContext context: Context): CabBookingManager {
         return CabBookingManager(context)
     }
+
+    @Provides
+    @Singleton
+    fun provideExternalAppManager(@ApplicationContext context: Context): ExternalAppManager {
+        return ExternalAppManager(context)
+    }
 }
