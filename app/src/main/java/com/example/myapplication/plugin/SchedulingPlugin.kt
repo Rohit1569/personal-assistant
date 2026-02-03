@@ -24,7 +24,8 @@ sealed class IntentResult {
         val title: String,
         val startTime: Long,
         val durationMinutes: Int,
-        val location: String? = null
+        val location: String? = null,
+        val inviteeEmail: String? = null
     ) : IntentResult()
     data class CalendarQuery(val startTime: Long, val endTime: Long) : IntentResult()
     data class CalendarDelete(val title: String) : IntentResult()

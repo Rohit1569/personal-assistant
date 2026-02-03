@@ -23,6 +23,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
+import com.example.myapplication.auth.AuthScreen
+import com.example.myapplication.auth.AuthState
+import com.example.myapplication.auth.AuthViewModel
 import com.example.myapplication.communication.WakeWordService
 import com.example.myapplication.ui.AiAssistantScreen
 import com.example.myapplication.ui.SchedulingViewModel
@@ -35,17 +38,8 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
 
     private val viewModel: SchedulingViewModel by viewModels()
+    private val authViewModel: AuthViewModel by viewModels()
     private var showAccessibilityDialog by mutableStateOf(false)
-
-    private val speechRecognizerLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val data = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            val spokenText = data?.get(0) ?: ""
-            viewModel.handleVoiceCommand(spokenText)
-        }
-    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -60,22 +54,43 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        intent?.getStringExtra("VOICE_COMMAND")?.let { viewModel.handleVoiceCommand(it) }
         checkAndRequestPermissions()
 
         setContent {
             MyApplicationTheme {
-                Surface(color = DeepBlack) {
-                    AiAssistantScreen(
-                        viewModel = viewModel,
-                        onVoiceRequest = { 
-                            if (!isAccessibilityServiceEnabled(this, com.example.myapplication.communication.WhatsAppAutomationService::class.java)) {
-                                showAccessibilityDialog = true
-                            } else {
-                                launchSpeechToText()
-                            }
+                val authState by authViewModel.authState.collectAsState()
+
+                // Pass token to SchedulingViewModel when authenticated
+                LaunchedEffect(authState) {
+                    if (authState is AuthState.Authenticated) {
+                        viewModel.setToken((authState as AuthState.Authenticated).token)
+                        
+                        // Handle delayed voice command if existing
+                        intent?.getStringExtra("VOICE_COMMAND")?.let { 
+                            viewModel.handleVoiceCommand(it) 
+                            intent.removeExtra("VOICE_COMMAND")
                         }
-                    )
+                    }
+                }
+
+                Surface(color = DeepBlack) {
+                    if (authState is AuthState.Authenticated) {
+                        AiAssistantScreen(
+                            viewModel = viewModel,
+                            onVoiceRequest = { 
+                                if (!isAccessibilityServiceEnabled(this, com.example.myapplication.communication.WhatsAppAutomationService::class.java)) {
+                                    showAccessibilityDialog = true
+                                } else {
+                                    viewModel.startNeuralListening()
+                                }
+                            },
+                            onLogoutRequest = {
+                                authViewModel.logout()
+                            }
+                        )
+                    } else {
+                        AuthScreen(viewModel = authViewModel)
+                    }
 
                     if (showAccessibilityDialog) {
                         AccessibilityDisclosureDialog(
@@ -96,7 +111,7 @@ class MainActivity : ComponentActivity() {
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text("Automation Permission") },
-            text = { Text("KIWI AI needs the Accessibility Service to automatically click 'Send' in WhatsApp when you give a voice command. We do not collect, store, or see any of your personal data or chat content.") },
+            text = { Text("APPLE AI needs the Accessibility Service to send messages automatically in the background. We do not collect or see your personal data.") },
             confirmButton = {
                 TextButton(onClick = onConfirm) { Text("Enable") }
             },
@@ -108,7 +123,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        intent?.getStringExtra("VOICE_COMMAND")?.let { viewModel.handleVoiceCommand(it) }
+        setIntent(intent)
+        val command = intent?.getStringExtra("VOICE_COMMAND")
+        if (command != null) {
+            viewModel.handleVoiceCommand(command)
+        }
     }
 
     private fun startWakeWordService() {
@@ -134,7 +153,10 @@ class MainActivity : ComponentActivity() {
         }
         val missing = permissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
-        else startWakeWordService()
+        else {
+            requestIgnoreBatteryOptimization()
+            startWakeWordService()
+        }
     }
 
     @SuppressLint("BatteryLife")
@@ -142,24 +164,13 @@ class MainActivity : ComponentActivity() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {
             try {
-                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                     data = Uri.parse("package:$packageName")
-                })
+                }
+                startActivity(intent)
             } catch (e: Exception) {
                 startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             }
-        }
-    }
-
-    private fun launchSpeechToText() {
-        try {
-            speechRecognizerLauncher.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "Listening...")
-            })
-        } catch (e: Exception) {
-            Toast.makeText(this, "STT failed", Toast.LENGTH_SHORT).show()
         }
     }
 
