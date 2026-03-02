@@ -9,184 +9,108 @@ class VoiceIntentProcessor {
     private val appointmentKeywords = listOf(
         "nail", "haircut", "doctor", "plumber", "electrician", "specialist", 
         "client", "partner", "prospect", "real estate", "handyman", "roofer", 
-        "siding", "patio", "designer", "fence", "mechanic", "dinner", "sport", 
-        "coach", "grocery", "meeting", "appointment", "event"
-    )
-
-    private val monthMap = mapOf(
-        "january" to Calendar.JANUARY, "february" to Calendar.FEBRUARY, "march" to Calendar.MARCH,
-        "april" to Calendar.APRIL, "may" to Calendar.MAY, "june" to Calendar.JUNE,
-        "july" to Calendar.JULY, "august" to Calendar.AUGUST, "september" to Calendar.SEPTEMBER,
-        "october" to Calendar.OCTOBER, "november" to Calendar.NOVEMBER, "december" to Calendar.DECEMBER,
-        "jan" to Calendar.JANUARY, "feb" to Calendar.FEBRUARY, "mar" to Calendar.MARCH, "apr" to Calendar.APRIL,
-        "jun" to Calendar.JUNE, "jul" to Calendar.JULY, "aug" to Calendar.AUGUST, "sep" to Calendar.SEPTEMBER,
-        "oct" to Calendar.OCTOBER, "nov" to Calendar.NOVEMBER, "dec" to Calendar.DECEMBER
+        "siding", "patio", "designer", "fence", "mechanic", "sport", 
+        "coach", "meeting", "appointment", "event"
     )
 
     fun parse(text: String): IntentResult {
         val lowerText = text.lowercase()
             .replace(Regex("(\\d+)(st|nd|rd|th)"), "$1")
-            .replace(",", "").replace(".", "").trim()
+            .replace(",", "").trim()
         
+        val currencyRegex = Regex("""([\$₹])\s?(\d+)|(\d+)\s?([\$₹]|dollars?|rupees?|bucks?)""")
+        val currencyMatch = currencyRegex.find(lowerText)
+        val hasCurrency = currencyMatch != null
+        val extractedAmount = currencyMatch?.let { 
+            it.groups[2]?.value?.toDoubleOrNull() ?: it.groups[3]?.value?.toDoubleOrNull() 
+        } ?: 0.0
+
         return when {
-            // 1. CALENDAR DELETE (Highest Priority)
-            lowerText.contains("cancel all") || lowerText.contains("clear all") || lowerText.contains("delete all") -> {
-                parseCalendarRangeDelete(lowerText)
+            // --- 1. CAB & SHOPPING (High Priority Actions) ---
+            lowerText.contains("uber") || lowerText.contains("ola") -> {
+                val provider = if (lowerText.contains("ola")) "OLA" else "UBER"
+                val destination = lowerText.substringAfter("to ").trim()
+                IntentResult.BookCab(provider, destination.ifEmpty { "your destination" })
             }
             
-            lowerText.startsWith("cancel") || lowerText.startsWith("delete") -> {
-                val title = lowerText.substringAfter("cancel ").substringAfter("delete ")
-                    .replace("meetings", "").replace("meeting", "").replace("appointments", "").replace("appointment", "").trim()
-                IntentResult.CalendarDelete(title)
+            lowerText.contains("amazon") || lowerText.contains("buy on") -> {
+                val query = lowerText.substringAfter("amazon ").replace("search for", "").trim()
+                IntentResult.Query("OPEN_APP|AMAZON|$query")
             }
 
-            // 2. NAVIGATION & MAPS
-            lowerText.contains("google maps") || lowerText.contains("maps") || 
-            lowerText.contains("where is") || lowerText.contains("location of") || 
-            lowerText.contains("navigate to") || lowerText.contains("directions to") -> {
-                val destination = lowerText
-                    .replace("google maps", "").replace("on map", "").replace("on maps", "")
-                    .substringAfter("where is ").substringAfter("location of ")
-                    .substringAfter("navigate to ").substringAfter("directions to ").trim()
+            // --- 2. NAVIGATION & MAPS ---
+            lowerText.contains("google maps") || lowerText.contains("navigate to") || lowerText.contains("directions to") -> {
+                val destination = lowerText.substringAfter("navigate to ").substringAfter("directions to ").substringAfter("to ").trim()
                 IntentResult.Query("OPEN_MAPS|$destination")
             }
 
-            // 3. BROWSER & SEARCH
-            lowerText.contains("search for") || lowerText.contains("who is") || 
-            lowerText.contains("what is") || lowerText.contains("nearest") || 
-            lowerText.contains("find") || lowerText.contains("browse") -> {
-                if (!lowerText.contains("meeting") && !lowerText.contains("schedule")) {
-                    val query = lowerText.substringAfter("search for ").substringAfter("find ")
-                        .substringAfter("browse ").substringAfter("what is ").substringAfter("who is ").trim()
-                    IntentResult.Query("OPEN_BROWSER|$query")
-                } else {
-                    parseCalendarQuery(lowerText)
-                }
+            // --- 3. WEB SEARCH & YOUTUBE ---
+            lowerText.contains("youtube") || lowerText.contains("play on") -> {
+                val query = lowerText.substringAfter("youtube ").replace("search for", "").trim()
+                IntentResult.Query("OPEN_APP|YOUTUBE|$query")
+            }
+            
+            lowerText.contains("search for") || lowerText.contains("who is") || lowerText.contains("what is") -> {
+                val query = lowerText.replace("search for", "").replace("google", "").trim()
+                IntentResult.Query("OPEN_BROWSER|$query")
             }
 
-            // 4. CAB BOOKING
-            lowerText.contains("uber") || lowerText.contains("ola") -> {
-                val provider = if (lowerText.contains("ola")) "OLA" else "UBER"
-                var dest = "your destination"
-                val markers = listOf(" to ", " for ", " at ")
-                for (marker in markers) {
-                    if (lowerText.contains(marker)) {
-                        dest = lowerText.substringAfter(marker).trim()
-                        break
-                    }
+            // --- 4. FINANCE ---
+            (currencyMatch != null || lowerText.contains("expense") || lowerText.contains("spent")) && !lowerText.contains("salary") -> {
+                val category = when {
+                    lowerText.contains("food") || lowerText.contains("lunch") -> "Food"
+                    lowerText.contains("gas") || lowerText.contains("fuel") -> "Gas"
+                    else -> "Shopping"
                 }
-                if (dest.contains("railway station") || dest.contains("station")) {
-                    dest = "Pune Station"
-                }
-                IntentResult.BookCab(provider, dest)
+                IntentResult.AddExpense(extractedAmount, category, lowerText.take(20))
+            }
+            
+            lowerText.contains("income") || lowerText.contains("salary") -> {
+                IntentResult.AddIncome(extractedAmount, "Salary")
             }
 
-            // 5. CALL INTENTS
-            lowerText.startsWith("call") -> parseCallIntent(lowerText)
-
-            // 6. CALENDAR QUERY
-            lowerText.contains("any meeting") || lowerText.contains("what is scheduled") || lowerText.contains("check my calendar") -> {
-                parseCalendarQuery(lowerText)
-            }
-
-            // 7. COMMUNICATION
-            lowerText.contains("send") || lowerText.contains("mail") || lowerText.contains("whatsapp") || lowerText.contains("sms") || lowerText.contains("text") -> {
+            // --- 5. COMMUNICATION ---
+            lowerText.contains("email") || lowerText.contains("mail") -> {
                 val app = when {
-                    lowerText.contains("mail") || lowerText.contains("gmail") -> CommunicationApp.GMAIL
-                    lowerText.contains("whatsapp") -> CommunicationApp.WHATSAPP
-                    lowerText.contains("sms") || lowerText.contains("text") -> CommunicationApp.SMS
-                    else -> CommunicationApp.WHATSAPP
+                    lowerText.contains("hotmail") -> CommunicationApp.HOTMAIL
+                    lowerText.contains("yahoo") -> CommunicationApp.YAHOO
+                    lowerText.contains("aol") -> CommunicationApp.AOL
+                    else -> CommunicationApp.GMAIL
                 }
-                parseCommunicationIntent(lowerText, app)
+                val recipient = lowerText.substringAfter("to ").substringBefore(" saying").trim()
+                val message = lowerText.substringAfter("saying ").trim()
+                IntentResult.SendMessage(app, recipient, message)
+            }
+
+            // UPDATED: Added "sms" and broadened "text" keywords
+            lowerText.contains("whatsapp") || lowerText.contains("sms") || lowerText.contains("text") -> {
+                val app = if (lowerText.contains("whatsapp")) CommunicationApp.WHATSAPP else CommunicationApp.SMS
+                val recipient = lowerText.substringAfter("to ").substringBefore(" saying").trim()
+                val message = lowerText.substringAfter("saying ").trim()
+                IntentResult.SendMessage(app, recipient, message)
+            }
+
+            // --- 6. PRODUCTIVITY ---
+            lowerText.contains("remind me to") || lowerText.contains("todo") -> {
+                IntentResult.AddTask(lowerText.replace("remind me to ", "").replace("todo ", "").trim())
             }
             
-            // 8. SCHEDULING
-            lowerText.contains("schedule") || lowerText.contains("book") || appointmentKeywords.any { lowerText.contains(it) } -> {
-                parseCalendarInsert(lowerText)
+            lowerText.contains("take a note") || lowerText.contains("note down") -> {
+                IntentResult.AddNote("Voice Note", lowerText.replace("take a note ", "").replace("note down ", "").trim())
             }
+
+            // --- 7. SCHEDULING & CALLS ---
+            lowerText.startsWith("call") -> IntentResult.Call(lowerText.substringAfter("call ").trim())
             
+            lowerText.contains("schedule") || appointmentKeywords.any { lowerText.contains(it) } -> parseCalendarInsert(lowerText)
+
             else -> IntentResult.Unrecognized(text)
         }
     }
 
-    private fun parseCallIntent(text: String): IntentResult {
-        val simIndex = if (text.contains("sim 2")) 2 else 1
-        val recipient = text.substringAfter("call ").substringBefore(" use").trim()
-        return IntentResult.Call(recipient, simIndex)
-    }
-
-    private fun parseCommunicationIntent(text: String, app: CommunicationApp): IntentResult {
-        val recipient = text.substringAfter("to ").substringBefore(" saying").substringBefore(" say").trim()
-        val message = text.substringAfter("saying ").substringAfter("say ").trim()
-        return IntentResult.SendMessage(app, recipient, if (message == text) "Hi" else message)
-    }
-
     private fun parseCalendarInsert(text: String): IntentResult {
-        val calendar = getCalendarForText(text)
-        val timeRegex = Regex("(\\d+)(?::(\\d+))?\\s*(pm|am)")
-        val match = timeRegex.find(text)
-        if (match != null) {
-            var hour = match.groupValues[1].toInt()
-            val amPm = match.groupValues[3]
-            if (amPm == "pm" && hour < 12) hour += 12
-            if (amPm == "am" && hour == 12) hour = 0
-            calendar.set(Calendar.HOUR_OF_DAY, hour)
-            calendar.set(Calendar.MINUTE, if (match.groupValues[2].isNotEmpty()) match.groupValues[2].toInt() else 0)
-        }
-        val title = text.substringAfter("schedule ").substringAfter("book ").substringBefore(" on").substringBefore(" today").substringBefore(" at").trim().replaceFirstChar { it.uppercase() }
-        
-        val invitee = if (text.contains("with ")) text.substringAfter("with ").substringBefore(" on").substringBefore(" at").trim() else null
-        
-        return IntentResult.CalendarInsert(
-            title = if (title.isEmpty()) "Meeting" else title, 
-            startTime = calendar.timeInMillis, 
-            durationMinutes = 60,
-            inviteeEmail = invitee 
-        )
-    }
-
-    private fun parseCalendarRangeDelete(text: String): IntentResult {
-        val calendar = getCalendarForText(text)
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
-        calendar.set(Calendar.MINUTE, 0)
-        calendar.set(Calendar.SECOND, 0)
-        val start = calendar.timeInMillis
-        
-        calendar.set(Calendar.HOUR_OF_DAY, 23)
-        calendar.set(Calendar.MINUTE, 59)
-        calendar.set(Calendar.SECOND, 59)
-        val end = calendar.timeInMillis
-        return IntentResult.CalendarRangeDelete(start, end)
-    }
-
-    private fun parseCalendarQuery(text: String): IntentResult {
-        val calendar = getCalendarForText(text)
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
-        calendar.set(Calendar.MINUTE, 0)
-        calendar.set(Calendar.SECOND, 0)
-        val start = calendar.timeInMillis
-        
-        calendar.set(Calendar.HOUR_OF_DAY, 23)
-        calendar.set(Calendar.MINUTE, 59)
-        calendar.set(Calendar.SECOND, 59)
-        val end = calendar.timeInMillis
-        return IntentResult.CalendarQuery(start, end)
-    }
-
-    private fun getCalendarForText(text: String): Calendar {
         val calendar = Calendar.getInstance()
-        var dateFound = false
-        for ((monthName, monthValue) in monthMap) {
-            if (text.contains(monthName)) {
-                calendar.set(Calendar.MONTH, monthValue)
-                Regex("(\\d+)").find(text.replace(monthName, " "))?.let {
-                    calendar.set(Calendar.DAY_OF_MONTH, it.groupValues[1].toInt())
-                    dateFound = true
-                }
-                break
-            }
-        }
-        if (!dateFound && text.contains("tomorrow")) calendar.add(Calendar.DAY_OF_YEAR, 1)
-        return calendar
+        val title = text.substringAfter("schedule ").substringAfter("book ").substringBefore(" at").trim()
+        return IntentResult.CalendarInsert(title.ifEmpty { "Meeting" }, calendar.timeInMillis, 60)
     }
 }

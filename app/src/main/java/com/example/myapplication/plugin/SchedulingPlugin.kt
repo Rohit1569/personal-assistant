@@ -15,7 +15,7 @@ interface SchedulingPlugin {
 }
 
 enum class CommunicationApp {
-    WHATSAPP, GMAIL, SLACK, SMS
+    WHATSAPP, GMAIL, SLACK, SMS, HOTMAIL, AOL, YAHOO
 }
 
 sealed class IntentResult {
@@ -40,4 +40,12 @@ sealed class IntentResult {
     data class BookCab(val provider: String, val destination: String) : IntentResult()
     data class Query(val query: String) : IntentResult()
     data class Unrecognized(val rawText: String) : IntentResult()
+    
+    // FINANCE INTENTS
+    data class AddExpense(val amount: Double, val category: String, val note: String) : IntentResult()
+    data class AddIncome(val amount: Double, val source: String) : IntentResult()
+
+    // PRODUCTIVITY INTENTS
+    data class AddTask(val title: String, val description: String? = null, val priority: String = "Medium") : IntentResult()
+    data class AddNote(val title: String, val content: String) : IntentResult()
 }
