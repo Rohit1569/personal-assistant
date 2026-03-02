@@ -19,9 +19,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Assistant
-import androidx.compose.material.icons.rounded.AccountBalanceWallet
-import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -52,6 +50,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: SchedulingViewModel by viewModels()
     private val financeViewModel: FinanceViewModel by viewModels()
     private val productivityViewModel: ProductivityViewModel by viewModels()
+    private val fitnessViewModel: FitnessViewModel by viewModels()
     private val authViewModel: AuthViewModel by viewModels()
     private var showAccessibilityDialog by mutableStateOf(false)
 
@@ -101,10 +100,7 @@ class MainActivity : ComponentActivity() {
                             val userId = json.getString("id")
                             financeViewModel.initForUser(userId)
                             productivityViewModel.setUserId(userId)
-                        } catch (e: Exception) {
-                            financeViewModel.initForUser(token.hashCode().toString())
-                            productivityViewModel.setUserId(token.hashCode().toString())
-                        }
+                        } catch (e: Exception) { }
                     }
                 }
 
@@ -115,18 +111,26 @@ class MainActivity : ComponentActivity() {
                                 NavigationBar(containerColor = Color.Black, modifier = Modifier.border(0.5.dp, Color.White.copy(alpha = 0.2f))) {
                                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                                     val currentRoute = navBackStackEntry?.destination?.route
+                                    
                                     val items = listOf(
                                         Triple("assistant", "BOT", Icons.Rounded.Assistant),
                                         Triple("finance", "MONEY", Icons.Rounded.AccountBalanceWallet),
-                                        Triple("productivity", "PLAN", Icons.Rounded.TaskAlt)
+                                        Triple("productivity", "PLAN", Icons.Rounded.TaskAlt),
+                                        Triple("fitness", "BODY", Icons.Rounded.FitnessCenter) // NEW
                                     )
+                                    
                                     items.forEach { (route, label, icon) ->
                                         NavigationBarItem(
                                             selected = currentRoute == route,
                                             onClick = { navController.navigate(route) },
-                                            icon = { Icon(icon, label, modifier = Modifier.size(26.dp)) },
-                                            label = { Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                            colors = NavigationBarItemDefaults.colors(selectedIconColor = ElectricCyan, indicatorColor = ElectricCyan.copy(alpha = 0.15f), unselectedIconColor = Color.LightGray, unselectedTextColor = Color.LightGray)
+                                            icon = { Icon(icon, label, modifier = Modifier.size(24.dp)) },
+                                            label = { Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold) },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = ElectricCyan,
+                                                indicatorColor = ElectricCyan.copy(alpha = 0.15f),
+                                                unselectedIconColor = Color.LightGray,
+                                                unselectedTextColor = Color.LightGray
+                                            )
                                         )
                                     }
                                 }
@@ -136,13 +140,7 @@ class MainActivity : ComponentActivity() {
                                 composable("assistant") {
                                     AiAssistantScreen(
                                         viewModel = viewModel,
-                                        onVoiceRequest = { 
-                                            if (!isAccessibilityServiceEnabled(this@MainActivity, com.example.myapplication.communication.WhatsAppAutomationService::class.java)) {
-                                                showAccessibilityDialog = true
-                                            } else {
-                                                viewModel.startNeuralListening()
-                                            }
-                                        },
+                                        onVoiceRequest = { viewModel.startNeuralListening() },
                                         onLogoutRequest = { authViewModel.logout() }
                                     )
                                 }
@@ -152,13 +150,12 @@ class MainActivity : ComponentActivity() {
                                 composable("productivity") {
                                     ProductivityScreen(viewModel = productivityViewModel)
                                 }
+                                composable("fitness") {
+                                    FitnessScreen(viewModel = fitnessViewModel) // NEW
+                                }
                             }
                         }
                     } else { AuthScreen(viewModel = authViewModel) }
-
-                    if (showAccessibilityDialog) {
-                        AccessibilityDisclosureDialog(onDismiss = { showAccessibilityDialog = false }, onConfirm = { showAccessibilityDialog = false; openAccessibilitySettings() })
-                    }
                 }
             }
         }
@@ -174,11 +171,6 @@ class MainActivity : ComponentActivity() {
         galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
 
-    @Composable
-    fun AccessibilityDisclosureDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
-        AlertDialog(onDismissRequest = onDismiss, title = { Text("Automation Required") }, text = { Text("Enable 'Kiwi AI Automation' in Accessibility settings to allow automatic message sending.") }, confirmButton = { TextButton(onClick = onConfirm) { Text("Settings") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Later") } })
-    }
-
     private fun startWakeWordService() {
         val serviceIntent = Intent(this, WakeWordService::class.java)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) startForegroundService(serviceIntent) else startService(serviceIntent)
@@ -186,16 +178,15 @@ class MainActivity : ComponentActivity() {
 
     private fun checkAndRequestPermissions() {
         val permissions = mutableListOf(Manifest.permission.WRITE_CALENDAR, Manifest.permission.READ_CALENDAR, Manifest.permission.READ_CONTACTS, Manifest.permission.RECORD_AUDIO, Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS, Manifest.permission.CAMERA)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         val missing = permissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
-        if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else { requestIgnoreBatteryOptimization(); startWakeWordService() }
+        if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else startWakeWordService()
     }
 
     private fun requestIgnoreBatteryOptimization() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {
             try { startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply { data = Uri.parse("package:$packageName") }) }
-            catch (e: Exception) { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+            catch (e: Exception) { }
         }
     }
 
