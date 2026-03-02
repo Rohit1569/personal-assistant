@@ -4,7 +4,17 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.POST
 
-data class SignupRequest(val name: String, val email: String, val password: String)
+data class SignupRequest(
+    val name: String,
+    val email: String,
+    val password: String,
+    val firstName: String,
+    val lastName: String,
+    val address: String,
+    val cellPhone: String,
+    val reasonForChoice: String
+)
+
 data class LoginRequest(val email: String, val password: String)
 data class VerifyOtpRequest(val email: String, val otp: String)
 data class ForgotPasswordRequest(val email: String)

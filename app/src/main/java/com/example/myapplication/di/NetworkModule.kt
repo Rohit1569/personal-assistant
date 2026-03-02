@@ -17,20 +17,17 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // --- PRODUCTION LOCK: SET TO TRUE FOR GITHUB/RELEASE ---
-    private const val IS_PRODUCTION = true 
+    private const val IS_PRODUCTION = false 
     private const val PROD_URL = "https://kiwi-ai-backend.vercel.app/"
-    private const val LOCAL_URL = "http://10.0.2.2:5002/" // Standard Emulator Fallback
+    private const val MY_MAC_IP = "192.168.0.5" 
 
     @Provides
     @Singleton
     fun provideOkHttpClient(tokenManager: TokenManager): OkHttpClient {
         val logging = HttpLoggingInterceptor { message ->
-            // Basic logging for production to protect privacy
-            if (IS_PRODUCTION) Log.d("PROD_TRACE", "Network call initiated")
-            else Log.d("DEBUG_TRACE", message)
+            Log.d("NETWORK_TRACE", message)
         }.apply {
-            level = if (IS_PRODUCTION) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.BODY 
         }
         
         return OkHttpClient.Builder()
@@ -48,8 +45,15 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
-        val finalUrl = if (IS_PRODUCTION) PROD_URL else LOCAL_URL
+        val isEmulator = android.os.Build.PRODUCT.contains("sdk") || 
+                        android.os.Build.MODEL.contains("Emulator")
         
+        val finalUrl = when {
+            IS_PRODUCTION -> PROD_URL
+            isEmulator -> "http://10.0.2.2:5002/"
+            else -> "http://$MY_MAC_IP:5002/" 
+        }
+
         return Retrofit.Builder()
             .baseUrl(finalUrl)
             .client(okHttpClient)
@@ -61,4 +65,5 @@ object NetworkModule {
     @Provides @Singleton fun provideUsageApi(r: Retrofit): UsageApi = r.create(UsageApi::class.java)
     @Provides @Singleton fun provideFinanceApi(r: Retrofit): FinanceApi = r.create(FinanceApi::class.java)
     @Provides @Singleton fun provideProductivityApi(r: Retrofit): ProductivityApi = r.create(ProductivityApi::class.java)
+    @Provides @Singleton fun provideFitnessApi(r: Retrofit): FitnessApi = r.create(FitnessApi::class.java)
 }

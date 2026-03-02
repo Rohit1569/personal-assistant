@@ -42,11 +42,31 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun signUp(name: String, email: String, pass: String) {
+    fun signUp(
+        email: String, 
+        password: String, // Changed from pass to password
+        firstName: String,
+        lastName: String,
+        address: String,
+        cellPhone: String,
+        reason: String
+    ) {
         viewModelScope.launch {
             _authState.value = AuthState.Loading
             try {
-                val response = authApi.signup(SignupRequest(name, email, pass))
+                // Combine names for the legacy 'name' field
+                val fullName = "$firstName $lastName".trim()
+                val request = SignupRequest(
+                    name = fullName,
+                    email = email,
+                    password = password,
+                    firstName = firstName,
+                    lastName = lastName,
+                    address = address,
+                    cellPhone = cellPhone,
+                    reasonForChoice = reason
+                )
+                val response = authApi.signup(request)
                 if (response.isSuccessful) {
                     pendingEmail = email
                     _authState.value = AuthState.OtpSent
