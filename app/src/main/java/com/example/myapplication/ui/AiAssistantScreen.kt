@@ -2,6 +2,7 @@ package com.example.myapplication.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -43,7 +44,6 @@ fun AiAssistantScreen(
     val isListening by viewModel.isListening.collectAsState()
     val context = LocalContext.current
 
-    // State Logic: Listening -> Processing -> Ready
     val isProcessing = uiState.lastVoiceCommandResult == "ANALYZING NEURAL INPUT..." || 
                       uiState.lastVoiceCommandResult?.startsWith("INITIALIZING") == true ||
                       uiState.lastVoiceCommandResult?.startsWith("SENDING") == true ||
@@ -58,7 +58,7 @@ fun AiAssistantScreen(
 
     val statusColor = when {
         isListening -> ElectricCyan
-        isProcessing -> Color(0xFFFFD700) // Gold for processing
+        isProcessing -> Color(0xFFFFD700) 
         else -> ElectricCyan.copy(alpha = 0.5f)
     }
 
@@ -75,7 +75,9 @@ fun AiAssistantScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         if (result.values.all { it }) {
-            onVoiceRequest() // FIXED: Ensure accessibility check happens
+            onVoiceRequest()
+        } else {
+            Toast.makeText(context, "Neural Link requires all permissions to function.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -106,12 +108,10 @@ fun AiAssistantScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 40.dp)
-                .padding(horizontal = 24.dp),
+                .padding(top = 40.dp, start = 24.dp, end = 24.dp, bottom = 0.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Status Badge
             Surface(
                 shape = RoundedCornerShape(50),
                 color = statusColor.copy(alpha = 0.1f),
@@ -147,7 +147,6 @@ fun AiAssistantScreen(
         ) {
             Spacer(modifier = Modifier.height(120.dp))
 
-            // AI Living Core
             Box(contentAlignment = Alignment.Center) {
                 AiLivingCore(
                     isListening = isListening,
@@ -157,7 +156,6 @@ fun AiAssistantScreen(
 
             Spacer(modifier = Modifier.height(40.dp))
 
-            // Neural Log / Result Panel
             AnimatedVisibility(
                 visible = uiState.lastVoiceCommandResult != null,
                 enter = fadeIn() + expandVertically(),
@@ -181,7 +179,6 @@ fun AiAssistantScreen(
                 }
             }
 
-            // Neural Task Log
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(32.dp),
@@ -204,10 +201,11 @@ fun AiAssistantScreen(
                 IconButton(
                     onClick = {
                         val missing = permissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
-                        if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
-                        else {
-                            if (isListening) viewModel.handleVoiceCommand("") // Stop listening
-                            else onVoiceRequest() // FIXED: Use the lambda from MainActivity to trigger accessibility check
+                        if (missing.isNotEmpty()) {
+                            permissionLauncher.launch(missing.toTypedArray())
+                        } else {
+                            if (isListening) viewModel.handleVoiceCommand("")
+                            else onVoiceRequest() 
                         }
                     },
                     modifier = Modifier

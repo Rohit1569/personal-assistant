@@ -4,21 +4,20 @@ import android.accessibilityservice.AccessibilityService
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.os.Handler
+import android.os.Looper
 
 class WhatsAppAutomationService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        // Only proceed if the event is from WhatsApp AND our app requested an auto-send
         if (event.packageName != "com.whatsapp") return
         
-        // Use the shared state to decide whether to automate or not
         if (!AutomationState.isAutoSendRequested.get()) {
             return
         }
 
         val rootNode = rootInActiveWindow ?: return
         
-        // WhatsApp Send Button detection logic
         val sendButtonIds = listOf(
             "com.whatsapp:id/send", 
             "com.whatsapp:id/voice_note_button",
@@ -30,7 +29,7 @@ class WhatsAppAutomationService : AccessibilityService() {
             val nodes = rootNode.findAccessibilityNodeInfosByViewId(id)
             for (node in nodes) {
                 if (node.isClickable) {
-                    Log.d("WHATSAPP_BOT", "Found send button by ID, clicking...")
+                    Log.d("WHATSAPP_BOT", "Found send button, clicking...")
                     node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                     foundAndClicked = true
                     break
@@ -40,13 +39,20 @@ class WhatsAppAutomationService : AccessibilityService() {
         }
 
         if (!foundAndClicked) {
-            // Fallback: Search by localized content description
             foundAndClicked = findAndClickByText(rootNode, "Send")
         }
 
         if (foundAndClicked) {
-            // Success! Reset the flag so manual messages aren't sent automatically
             AutomationState.consumeAutoSendRequest()
+            
+            // NEURAL RECOIL: Wait 800ms for message to send, then return to app
+            Handler(Looper.getMainLooper()).postDelayed({
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                // Second back if needed to exit the chat screen
+                Handler(Looper.getMainLooper()).postDelayed({
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                }, 300)
+            }, 800)
         }
         
         rootNode.recycle()
@@ -56,7 +62,6 @@ class WhatsAppAutomationService : AccessibilityService() {
         if (node.contentDescription?.toString()?.equals(text, ignoreCase = true) == true ||
             node.text?.toString()?.equals(text, ignoreCase = true) == true) {
             if (node.isClickable) {
-                Log.d("WHATSAPP_BOT", "Found send button by Text, clicking...")
                 node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 return true
             }
@@ -64,9 +69,7 @@ class WhatsAppAutomationService : AccessibilityService() {
         
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            if (findAndClickByText(child, text)) {
-                return true
-            }
+            if (findAndClickByText(child, text)) return true
         }
         return false
     }

@@ -1,12 +1,15 @@
 package com.example.myapplication.ui
 
+import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.myapplication.api.IncrementRequest
 import com.example.myapplication.api.UsageApi
 import com.example.myapplication.communication.*
+import com.example.myapplication.data.FinanceRepository
+import com.example.myapplication.data.ProductivityRepository
 import com.example.myapplication.data.SchedulingRepository
-import com.example.myapplication.models.Appointment
+import com.example.myapplication.models.*
 import com.example.myapplication.plugin.IntentResult
 import com.example.myapplication.voice.VoiceIntentProcessor
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -14,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
@@ -21,6 +25,8 @@ import javax.inject.Inject
 @HiltViewModel
 class SchedulingViewModel @Inject constructor(
     private val repository: SchedulingRepository,
+    private val financeRepository: FinanceRepository,
+    private val productivityRepository: ProductivityRepository,
     private val voiceProcessor: VoiceIntentProcessor,
     private val communicationManager: CommunicationManager,
     private val backgroundManager: BackgroundManager,
@@ -39,6 +45,7 @@ class SchedulingViewModel @Inject constructor(
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
 
     private var userToken: String? = null
+    private var userId: String? = null
 
     init {
         observeAppointments()
@@ -46,6 +53,12 @@ class SchedulingViewModel @Inject constructor(
 
     fun setToken(token: String) {
         userToken = "Bearer $token"
+        try {
+            val json = JSONObject(String(Base64.decode(token.split(".")[1], Base64.DEFAULT)))
+            userId = json.getString("id")
+        } catch (e: Exception) {
+            userId = token.hashCode().toString()
+        }
     }
 
     private fun observeAppointments() {
@@ -67,11 +80,7 @@ class SchedulingViewModel @Inject constructor(
     private fun trackUsage(feature: String) {
         val token = userToken ?: return
         viewModelScope.launch {
-            try {
-                usageApi.incrementStat(token, IncrementRequest(feature))
-            } catch (e: Exception) {
-                // Silent fail for tracking
-            }
+            try { usageApi.incrementStat(token, IncrementRequest(feature)) } catch (e: Exception) { }
         }
     }
 
@@ -82,128 +91,66 @@ class SchedulingViewModel @Inject constructor(
             val result = voiceProcessor.parse(text)
             
             when (result) {
-                is IntentResult.CalendarInsert -> {
-                    val contact = result.inviteeEmail?.let { contactHelper.findContact(it) }
-                    val targetEmail = contact?.email
-                    
-                    if (result.inviteeEmail != null && targetEmail == null) {
-                        speakAndConfirm("PROTOCOL ABORTED. EMAIL FOR ${result.inviteeEmail.uppercase()} NOT FOUND IN CONTACTS.")
-                    } else {
-                        val speechText = if (targetEmail != null) {
-                            "INITIALIZING CALENDAR PROTOCOL FOR ${result.title.uppercase()} WITH ${contact?.name?.uppercase()}. SENDING INVITE."
-                        } else {
-                            "INITIALIZING CALENDAR PROTOCOL FOR ${result.title.uppercase()}. MARKING YOUR CALENDAR."
-                        }
-                        
-                        speakAndConfirm(speechText)
-                        backgroundManager.insertCalendarEventBackground(result.title, result.startTime, result.durationMinutes, result.location)
-                            .onSuccess { 
-                                _uiState.value = _uiState.value.copy(lastVoiceCommandResult = "PROTOCOL COMPLETE.")
-                                ttsManager.speak("CALENDAR SYNCHRONIZED.")
-                                trackUsage("MEETING")
-                                if (targetEmail != null) {
-                                    backgroundManager.sendGmailIntent(targetEmail, "Meeting Invitation: ${result.title}", "Hi ${contact?.name}, I have scheduled a meeting: ${result.title} at ${formatTime(result.startTime)}.")
-                                }
-                            }
-                    }
+                is IntentResult.AddTask -> {
+                    val uid = userId ?: return@launch
+                    productivityRepository.createTask(Task(userId = uid, title = result.title, description = result.description, priority = result.priority))
+                    speakAndConfirm("TASK RECOGNIZED. ADDED ${result.title.uppercase()} TO YOUR PLAN.")
                 }
 
-                is IntentResult.CalendarQuery -> {
-                    speakAndConfirm("SCANNING TEMPORAL DATA.")
-                    backgroundManager.queryCalendarEvents(result.startTime, result.endTime).onSuccess { events ->
-                        if (events.isEmpty()) {
-                            speakAndConfirm("NO TEMPORAL DATA DETECTED.")
-                        } else {
-                            val eventTitles = events.joinToString(", ") { "${it.title} AT ${formatTime(it.startTime)}" }
-                            speakAndConfirm("DATA RETRIEVED: $eventTitles.")
-                        }
-                    }
+                is IntentResult.AddNote -> {
+                    val uid = userId ?: return@launch
+                    productivityRepository.createNote(Note(userId = uid, title = result.title, content = result.content))
+                    speakAndConfirm("NOTE CAPTURED. I HAVE SAVED THAT TO YOUR IDEATION ENGINE.")
                 }
 
-                is IntentResult.CalendarDelete -> {
-                    speakAndConfirm("INITIATING PURGE FOR ${result.title.uppercase()}.")
-                    backgroundManager.deleteCalendarEvent(result.title).onSuccess { count ->
-                        if (count > 0) speakAndConfirm("PURGE SUCCESSFUL. REMOVED $count EVENTS.")
-                        else speakAndConfirm("PURGE FAILED. TARGET NOT FOUND.")
-                    }
-                }
-
-                is IntentResult.CalendarRangeDelete -> {
-                    speakAndConfirm("INITIATING GLOBAL PURGE FOR THE SPECIFIED RANGE.")
-                    backgroundManager.deleteCalendarEventsInRange(result.startTime, result.endTime).onSuccess { count ->
-                        if (count > 0) speakAndConfirm("GLOBAL PURGE COMPLETE. $count MEETINGS REMOVED.")
-                        else speakAndConfirm("SPECIFIED RANGE IS ALREADY VOID.")
-                    }
+                is IntentResult.AddExpense -> {
+                    val uid = userId ?: return@launch
+                    financeRepository.addExpense(Expense(id = UUID.randomUUID().toString(), userId = uid, category = result.category, amount = result.amount, date = getIsoDate(), note = result.note))
+                    speakAndConfirm("ACKNOWLEDGED. ADDED EXPENSE OF $${result.amount} FOR ${result.category.uppercase()}.")
                 }
 
                 is IntentResult.SendMessage -> {
                     val contact = contactHelper.findContact(result.recipient)
-                    val target = if (result.app == com.example.myapplication.plugin.CommunicationApp.GMAIL) contact?.email else contact?.phone
-                    
-                    if (target == null && contact == null) {
-                        speakAndConfirm("PROTOCOL FAILED. ${result.recipient.uppercase()} NOT FOUND IN CONTACTS.")
-                    } else {
-                        val finalTarget = target ?: result.recipient
-                        val recipientName = contact?.name?.uppercase() ?: result.recipient.uppercase()
-                        speakAndConfirm("SENDING ${result.app} MESSAGE TO $recipientName SAYING ${result.message.uppercase()}.")
-                        communicationManager.sendMessage(result.app, finalTarget, result.message)
-                        trackUsage(if (result.app == com.example.myapplication.plugin.CommunicationApp.GMAIL) "EMAIL" else "MESSAGE")
-                    }
-                }
-
-                is IntentResult.Call -> {
-                    val contact = contactHelper.findContact(result.recipient)
-                    val target = contact?.phone ?: result.recipient
-                    val recipientName = contact?.name?.uppercase() ?: result.recipient.uppercase()
-                    speakAndConfirm("INITIATING VOICE LINK TO $recipientName.")
-                    backgroundManager.makeCallWithSim(target, result.simIndex)
-                    trackUsage("OTHER")
-                }
-
-                is IntentResult.BookCab -> {
-                    speakAndConfirm("INITIALIZING CAB PROTOCOL. LAUNCHING ${result.provider} TO ${result.destination.uppercase()}.")
-                    cabBookingManager.bookCab(result.provider, result.destination)
-                    trackUsage("CAB")
+                    val target = if (result.app.toString().contains("MAIL")) contact?.email else contact?.phone
+                    val finalTarget = target ?: result.recipient
+                    speakAndConfirm("INITIALIZING ${result.app} PROTOCOL TO ${result.recipient.uppercase()}.")
+                    communicationManager.sendMessage(result.app, finalTarget, result.message)
                 }
 
                 is IntentResult.Query -> {
-                    if (result.query.startsWith("OPEN_MAPS|")) {
-                        val destination = result.query.substringAfter("|")
-                        speakAndConfirm("SEARCHING MAPS FOR $destination.")
-                        externalAppManager.launchAppWithSearch("MAPS", destination)
-                        trackUsage("OTHER")
-                    } else if (result.query.startsWith("OPEN_BROWSER|")) {
-                        val searchQuery = result.query.substringAfter("|")
-                        speakAndConfirm("SEARCHING BROWSER FOR $searchQuery.")
-                        externalAppManager.launchAppWithSearch("BROWSER", searchQuery)
-                        trackUsage("OTHER")
-                    } else if (result.query.startsWith("OPEN_APP|")) {
-                        val parts = result.query.split("|")
-                        val app = parts[1]
-                        val query = parts[2]
-                        speakAndConfirm("SEARCHING $app FOR $query.")
-                        externalAppManager.launchAppWithSearch(app, query)
-                        trackUsage("OTHER")
+                    if (result.query == "OPEN_FINANCE_OVERVIEW") {
+                        speakAndConfirm("PREPARING FINANCIAL ANALYTICS. SWITCHING VIEW.")
+                        // Logic to navigate to Finance could be handled by a UI listener or shared state
+                    } else if (result.query.startsWith("OPEN_MAPS|")) {
+                        externalAppManager.launchAppWithSearch("MAPS", result.query.substringAfter("|"))
                     }
                 }
 
+                is IntentResult.CalendarInsert -> {
+                    speakAndConfirm("SCHEDULING MEETING: ${result.title.uppercase()}.")
+                    backgroundManager.insertCalendarEventBackground(result.title, result.startTime, result.durationMinutes, result.location)
+                }
+
                 is IntentResult.Unrecognized -> {
-                    ttsManager.speak("NEURAL INPUT UNRECOGNIZED: $text")
-                    _uiState.value = _uiState.value.copy(lastVoiceCommandResult = null)
+                    speakAndConfirm("NEURAL INPUT UNRECOGNIZED: $text")
                 }
-                else -> {
-                    _uiState.value = _uiState.value.copy(lastVoiceCommandResult = null)
-                }
+                else -> { _uiState.value = _uiState.value.copy(lastVoiceCommandResult = null) }
             }
         }
     }
 
-    private fun formatTime(millis: Long): String {
-        return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(millis))
+    private fun getIsoDate(): String {
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault()).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date())
     }
 
     private fun speakAndConfirm(text: String) {
         _uiState.value = _uiState.value.copy(lastVoiceCommandResult = text)
         ttsManager.speak(text)
+    }
+
+    private fun formatTime(millis: Long): String {
+        return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(millis))
     }
 }

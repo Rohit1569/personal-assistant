@@ -14,5 +14,9 @@
 .cxx
 local.properties
 
-# Ignore backend folder in the Android repository
+# Ignore the entire backend folder for the Frontend Repo
 backend/
+
+# Android specific
+app/build/
+.kotlin/
