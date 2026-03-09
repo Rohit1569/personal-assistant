@@ -21,4 +21,12 @@ class TokenManager @Inject constructor(@ApplicationContext context: Context) {
     fun clearToken() {
         prefs.edit().remove("jwt_token").apply()
     }
+
+    fun isSetupComplete(): Boolean {
+        return prefs.getBoolean("setup_complete_v1", false)
+    }
+
+    fun setSetupComplete() {
+        prefs.edit().putBoolean("setup_complete_v1", true).apply()
+    }
 }

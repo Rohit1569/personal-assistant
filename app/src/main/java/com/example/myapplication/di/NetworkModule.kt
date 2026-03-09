@@ -17,15 +17,18 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val IS_PRODUCTION = false 
+    // --- CLOUD CONFIGURATION ---
+    private const val IS_PRODUCTION = true 
     private const val PROD_URL = "https://kiwi-ai-backend.vercel.app/"
+    
+    // Replace this with your actual Mac IP if testing on a real device
     private const val MY_MAC_IP = "192.168.0.5" 
 
     @Provides
     @Singleton
     fun provideOkHttpClient(tokenManager: TokenManager): OkHttpClient {
         val logging = HttpLoggingInterceptor { message ->
-            Log.d("NETWORK_TRACE", message)
+            Log.d("KIWI_NETWORK", message)
         }.apply {
             level = HttpLoggingInterceptor.Level.BODY 
         }
@@ -48,11 +51,14 @@ object NetworkModule {
         val isEmulator = android.os.Build.PRODUCT.contains("sdk") || 
                         android.os.Build.MODEL.contains("Emulator")
         
+        // When IS_PRODUCTION is true, it will always use the hosted Vercel backend
         val finalUrl = when {
             IS_PRODUCTION -> PROD_URL
             isEmulator -> "http://10.0.2.2:5002/"
             else -> "http://$MY_MAC_IP:5002/" 
         }
+
+        Log.d("KIWI_NETWORK", "Base URL set to: $finalUrl")
 
         return Retrofit.Builder()
             .baseUrl(finalUrl)

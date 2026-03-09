@@ -11,16 +11,16 @@ import javax.inject.Singleton
 class FinanceRepository @Inject constructor(
     private val financeApi: FinanceApi
 ) {
-    // HEARTBEAT SIGNAL: Forces UI to refresh in real-time
+    // REFRESH PULSE: Forces UI to stay in sync with Cloud DB
     private val _refreshSignal = MutableSharedFlow<Unit>(replay = 1)
     val refreshSignal = _refreshSignal.asSharedFlow()
 
-    fun triggerRefresh() {
-        _refreshSignal.tryEmit(Unit)
-    }
+    init { triggerRefresh() }
+
+    fun triggerRefresh() { _refreshSignal.tryEmit(Unit) }
 
     fun getAllExpenses(userId: String): Flow<List<Expense>> = refreshSignal
-        .onStart { emit(Unit) } // Fetch immediately on start
+        .onStart { emit(Unit) }
         .flatMapLatest {
             flow {
                 try {
@@ -30,12 +30,16 @@ class FinanceRepository @Inject constructor(
             }
         }
 
-    suspend fun addExpense(expense: Expense) {
-        try {
+    suspend fun addExpense(expense: Expense): Boolean {
+        return try {
             val response = financeApi.addExpense(expense)
-            if (response.isSuccessful) triggerRefresh() // PULSE HEARTBEAT
+            if (response.isSuccessful) {
+                triggerRefresh()
+                true
+            } else false
         } catch (e: Exception) {
-            Log.e("FinanceRepo", "Network error adding expense")
+            Log.e("FinanceRepo", "Failed to add expense")
+            false
         }
     }
 
@@ -50,50 +54,20 @@ class FinanceRepository @Inject constructor(
             }
         }
 
-    suspend fun addIncome(income: Income) {
-        try {
+    suspend fun addIncome(income: Income): Boolean {
+        return try {
             val response = financeApi.addIncome(income)
-            if (response.isSuccessful) triggerRefresh() // PULSE HEARTBEAT
+            if (response.isSuccessful) {
+                triggerRefresh()
+                true
+            } else false
         } catch (e: Exception) {
-            Log.e("FinanceRepo", "Network error adding income")
+            Log.e("FinanceRepo", "Failed to add income")
+            false
         }
     }
 
-    fun getBudgetsForMonth(userId: String, month: String): Flow<List<Budget>> = refreshSignal
-        .onStart { emit(Unit) }
-        .flatMapLatest {
-            flow {
-                try {
-                    val response = financeApi.getBudgets(month)
-                    if (response.isSuccessful) emit(response.body() ?: emptyList())
-                } catch (e: Exception) { emit(emptyList()) }
-            }
-        }
-
-    suspend fun addBudget(budget: Budget) {
-        try {
-            val response = financeApi.addBudget(budget)
-            if (response.isSuccessful) triggerRefresh()
-        } catch (e: Exception) { }
-    }
-
-    fun getSavingsGoals(userId: String): Flow<List<SavingsGoal>> = refreshSignal
-        .onStart { emit(Unit) }
-        .flatMapLatest {
-            flow {
-                try {
-                    val response = financeApi.getSavingsGoals()
-                    if (response.isSuccessful) emit(response.body() ?: emptyList())
-                } catch (e: Exception) { emit(emptyList()) }
-            }
-        }
-
-    suspend fun addSavingsGoal(goal: SavingsGoal) {
-        try {
-            val response = financeApi.addSavingsGoal(goal)
-            if (response.isSuccessful) triggerRefresh()
-        } catch (e: Exception) { }
-    }
-
+    fun getBudgetsForMonth(userId: String, month: String): Flow<List<Budget>> = flowOf(emptyList())
+    fun getSavingsGoals(userId: String): Flow<List<SavingsGoal>> = flowOf(emptyList())
     suspend fun clearAllData() { }
 }
