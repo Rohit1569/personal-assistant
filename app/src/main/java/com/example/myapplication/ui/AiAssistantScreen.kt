@@ -7,25 +7,21 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.Logout
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.myapplication.ui.components.AiLivingCore
 import com.example.myapplication.ui.theme.*
+import kotlin.random.Random
 
 @Composable
 fun AiAssistantScreen(
@@ -45,22 +42,10 @@ fun AiAssistantScreen(
     val context = LocalContext.current
 
     val isProcessing = uiState.lastVoiceCommandResult == "ANALYZING NEURAL INPUT..." || 
-                      uiState.lastVoiceCommandResult?.startsWith("INITIALIZING") == true ||
-                      uiState.lastVoiceCommandResult?.startsWith("SENDING") == true ||
-                      uiState.lastVoiceCommandResult?.startsWith("SEARCHING") == true ||
-                      uiState.lastVoiceCommandResult?.startsWith("INITIATING") == true
+                      uiState.lastVoiceCommandResult?.startsWith("INITIALIZING") == true
 
-    val statusText = when {
-        isListening -> "LISTENING..."
-        isProcessing -> "PROCESSING..."
-        else -> "READY"
-    }
-
-    val statusColor = when {
-        isListening -> ElectricCyan
-        isProcessing -> Color(0xFFFFD700) 
-        else -> ElectricCyan.copy(alpha = 0.5f)
-    }
+    val statusText = "AI READY"
+    val statusColor = ElectricCyan
 
     val permissions = arrayOf(
         Manifest.permission.RECORD_AUDIO,
@@ -77,127 +62,116 @@ fun AiAssistantScreen(
         if (result.values.all { it }) {
             onVoiceRequest()
         } else {
-            Toast.makeText(context, "Neural Link requires all permissions to function.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Permissions required for AI Assistant.", Toast.LENGTH_LONG).show()
         }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepBlack)
+            .background(Color(0xFF000814))
     ) {
-        // Background Glow
-        if (isListening || isProcessing) {
-            val infiniteTransition = rememberInfiniteTransition(label = "bgGlow")
-            val alpha by infiniteTransition.animateFloat(
-                initialValue = 0.05f,
-                targetValue = 0.15f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1200),
-                    repeatMode = RepeatMode.Reverse
-                ), label = "alpha"
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Brush.radialGradient(listOf(statusColor.copy(alpha = alpha), Color.Transparent)))
-            )
-        }
+        // Animated Cosmic Background
+        CosmicBackground(isListening || isProcessing)
 
-        // Top Bar
-        Row(
+        // Logout Button - Top Right
+        IconButton(
+            onClick = onLogoutRequest,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 40.dp, start = 24.dp, end = 24.dp, bottom = 0.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .align(Alignment.TopEnd)
+                .padding(top = 48.dp, end = 20.dp)
+                .size(40.dp)
+                .background(Color.White.copy(alpha = 0.05f), CircleShape)
+                .border(0.5.dp, Color.White.copy(alpha = 0.1f), CircleShape)
         ) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = statusColor.copy(alpha = 0.1f),
-                border = BorderStroke(1.dp, statusColor.copy(alpha = 0.4f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(modifier = Modifier.size(6.dp).background(statusColor, CircleShape))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = statusText,
-                        color = statusColor,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
-                    )
-                }
-            }
-
-            IconButton(
-                onClick = onLogoutRequest,
-                modifier = Modifier.size(40.dp).background(Color.White.copy(alpha = 0.05f), CircleShape)
-            ) {
-                Icon(Icons.Rounded.Logout, contentDescription = "Logout", tint = ElectricCyan, modifier = Modifier.size(18.dp))
-            }
+            Icon(
+                imageVector = Icons.Rounded.Logout,
+                contentDescription = "Logout",
+                tint = Color.White.copy(alpha = 0.6f),
+                modifier = Modifier.size(20.dp)
+            )
         }
 
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(120.dp))
-
-            Box(contentAlignment = Alignment.Center) {
-                AiLivingCore(
-                    isListening = isListening,
-                    modifier = Modifier.size(240.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(40.dp))
-
-            AnimatedVisibility(
-                visible = uiState.lastVoiceCommandResult != null,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut()
+            // Top Status Badge
+            Spacer(modifier = Modifier.height(56.dp))
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = Color.Black.copy(alpha = 0.3f),
+                border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.4f)),
+                modifier = Modifier.padding(horizontal = 16.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.White.copy(alpha = 0.02f))
-                        .border(0.5.dp, statusColor.copy(alpha = 0.3f))
-                        .padding(20.dp)
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(statusColor, CircleShape)
+                            .drawBehind {
+                                drawCircle(statusColor.copy(alpha = 0.4f), radius = size.minDimension * 0.8f)
+                            }
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "> ${uiState.lastVoiceCommandResult}",
-                        color = statusColor,
-                        fontSize = 15.sp,
-                        fontFamily = FuturisticFontFamily,
-                        lineHeight = 22.sp
+                        text = statusText,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp
                     )
                 }
             }
+            
+            Text(
+                text = if (isListening) "Listening for commands" else "Tap mic to start",
+                color = ElectricCyan.copy(alpha = 0.6f),
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 12.dp)
+            )
 
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(32.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Central Animated Orb
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(320.dp)
             ) {
-                item {
-                    Text("ACTIVITY_LOG", color = Color.Gray, fontSize = 10.sp, letterSpacing = 2.sp)
-                }
-                items(uiState.appointments) { appointment ->
-                    Box(
-                        modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.01f)).padding(12.dp)
-                    ) {
-                        Text(appointment.title.uppercase(), color = SoftNeonWhite, fontSize = 12.sp)
-                    }
-                }
+                AiLivingCore(
+                    isListening = isListening,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
 
-            // Mic Activation
-            Box(modifier = Modifier.fillMaxWidth().padding(bottom = 60.dp), contentAlignment = Alignment.Center) {
+            Text(
+                text = "How can I assist you today?",
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Normal,
+                letterSpacing = 0.5.sp,
+                modifier = Modifier.padding(top = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.weight(1.2f))
+
+            // Large Animated Mic Button
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 60.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                val infiniteTransition = rememberInfiniteTransition(label = "micGlow")
+                val glowAlpha by infiniteTransition.animateFloat(
+                    initialValue = 0.3f,
+                    targetValue = 0.7f,
+                    animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse), label = "alpha"
+                )
+
                 IconButton(
                     onClick = {
                         val missing = permissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
@@ -209,18 +183,83 @@ fun AiAssistantScreen(
                         }
                     },
                     modifier = Modifier
-                        .size(80.dp)
-                        .background(if (isListening) ElectricCyan.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
-                        .border(2.dp, ElectricCyan.copy(alpha = if (isListening) 1f else 0.3f), CircleShape)
+                        .size(92.dp)
+                        .drawBehind {
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(ElectricCyan.copy(alpha = glowAlpha), Color.Transparent)
+                                ),
+                                radius = size.minDimension * 0.8f
+                            )
+                        }
+                        .border(2.5.dp, ElectricCyan, CircleShape)
+                        .background(Color.Black.copy(alpha = 0.4f), CircleShape)
                 ) {
                     Icon(
                         imageVector = if (isListening) Icons.Rounded.Stop else Icons.Rounded.Mic,
                         contentDescription = "Mic",
                         tint = ElectricCyan,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(42.dp)
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun CosmicBackground(isActive: Boolean) {
+    val infiniteTransition = rememberInfiniteTransition(label = "cosmic")
+    
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(80000, easing = LinearEasing)), label = "rotation"
+    )
+
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(tween(5000), RepeatMode.Reverse), label = "pulse"
+    )
+
+    Canvas(modifier = Modifier.fillMaxSize().graphicsLayer(rotationZ = rotation)) {
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0xFF003566).copy(alpha = 0.25f * pulse), Color.Transparent),
+                center = Offset(size.width * 0.3f, size.height * 0.4f),
+                radius = size.width * 0.9f
+            ),
+            radius = size.width * 0.9f,
+            center = Offset(size.width * 0.3f, size.height * 0.4f)
+        )
+
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0xFF1B4965).copy(alpha = 0.2f * pulse), Color.Transparent),
+                center = Offset(size.width * 0.7f, size.height * 0.6f),
+                radius = size.width * 0.7f
+            ),
+            radius = size.width * 0.7f,
+            center = Offset(size.width * 0.7f, size.height * 0.6f)
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        repeat(40) {
+            val startX = remember { Random.nextFloat() }
+            val startY = remember { Random.nextFloat() }
+            val sizeStar = remember { Random.nextFloat() * 1.5f + 0.5f }
+            
+            Box(
+                modifier = Modifier
+                    .offset(
+                        x = (startX * 400).dp,
+                        y = (startY * 800).dp
+                    )
+                    .size(sizeStar.dp)
+                    .background(Color.White.copy(alpha = Random.nextFloat() * 0.4f + 0.1f), CircleShape)
+            )
         }
     }
 }
