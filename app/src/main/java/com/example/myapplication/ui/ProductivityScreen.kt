@@ -1,7 +1,6 @@
 package com.example.myapplication.ui
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,140 +13,136 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.example.myapplication.models.Note
 import com.example.myapplication.models.Task
-import kotlin.random.Random
-
-// 2026 COSMIC PRO PALETTE
-private val MatrixCyan = Color(0xFF00F2FF)
-private val MatrixMagenta = Color(0xFFFF00E5)
-private val MatrixPurple = Color(0xFF7000FF)
+import com.example.myapplication.ui.theme.*
 
 @Composable
 fun ProductivityScreen(viewModel: ProductivityViewModel) {
     val tasks by viewModel.tasks.collectAsState()
     val notes by viewModel.notes.collectAsState()
-    var currentTab by remember { mutableIntStateOf(0) }
+    val ideas by viewModel.ideas.collectAsState() // Independent local state
+    
+    var activeTab by remember { mutableStateOf("TASKS") }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF020205))) {
-        // High-Fidelity Cosmic Background
-        CosmicBackground()
-
-        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
-            // Futuristic Greeting Header
-            HeaderSection("Good Evening 👋")
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Capsule Style Navigation
-            CapsuleTabRow(currentTab) { currentTab = it }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Main Productivity Interface
-            Box(modifier = Modifier.weight(1f)) {
-                AnimatedContent(
-                    targetState = currentTab,
-                    transitionSpec = { fadeIn(tween(500)) togetherWith fadeOut(tween(500)) },
-                    label = "content"
-                ) { targetTab ->
-                    if (targetTab == 0) {
-                        if (tasks.isEmpty()) {
-                            AllCaughtUpCard(onAdd = { showAddDialog = true })
-                        } else {
-                            TaskList(tasks, onToggle = { viewModel.toggleTaskStatus(it) }, onDelete = { viewModel.deleteTask(it) })
-                        }
-                    } else {
-                        NoteList(notes, onDelete = { viewModel.deleteNote(it) })
-                    }
-                }
+    Scaffold(
+        containerColor = DeepBlack,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                containerColor = ElectricCyan,
+                contentColor = DeepBlack,
+                shape = CircleShape,
+                modifier = Modifier.padding(bottom = 16.dp)
+            ) {
+                Icon(
+                    imageVector = when(activeTab) {
+                        "TASKS" -> Icons.Rounded.AddTask
+                        "NOTES" -> Icons.Rounded.NoteAdd
+                        else -> Icons.Rounded.Lightbulb
+                    },
+                    contentDescription = "Add Item"
+                )
             }
         }
+    ) { innerPadding ->
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                
+                // Tab Selector
+                Row(
+                    modifier = Modifier
+                        .padding(horizontal = 24.dp)
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                        .padding(4.dp)
+                ) {
+                    TabItem("TASKS", activeTab == "TASKS", Modifier.weight(1f)) { activeTab = "TASKS" }
+                    TabItem("NOTES", activeTab == "NOTES", Modifier.weight(1f)) { activeTab = "NOTES" }
+                    TabItem("IDEAS", activeTab == "IDEAS", Modifier.weight(1f)) { activeTab = "IDEAS" }
+                }
 
-        // Action FAB positioned at Bottom Right
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
-            contentAlignment = Alignment.BottomEnd
-        ) {
-            ActionFab(onClick = { showAddDialog = true })
+                Spacer(modifier = Modifier.height(24.dp))
+
+                when (activeTab) {
+                    "TASKS" -> TaskList(tasks, onDelete = { viewModel.deleteTask(it) })
+                    "NOTES" -> NoteList(notes, onDelete = { viewModel.deleteNote(it) })
+                    "IDEAS" -> IdeaList(ideas, onDelete = { viewModel.deleteIdea(it) })
+                }
+            }
         }
     }
 
     if (showAddDialog) {
-        if (currentTab == 0) {
-            AddTaskDialog(onDismiss = { showAddDialog = false }) { title, desc, priority ->
-                viewModel.addTask(title, desc, priority, null)
+        AddProductivityItemDialog(
+            type = activeTab,
+            onDismiss = { showAddDialog = false },
+            onConfirm = { title, content ->
+                when (activeTab) {
+                    "TASKS" -> viewModel.addTask(title, content, "Medium", null)
+                    "NOTES" -> viewModel.addNote(title, content)
+                    "IDEAS" -> viewModel.addIdea(title, content) // Local only
+                }
                 showAddDialog = false
             }
-        } else {
-            AddNoteDialog(onDismiss = { showAddDialog = false }) { title, content ->
-                viewModel.addNote(title, content)
-                showAddDialog = false
-            }
-        }
+        )
     }
 }
 
 @Composable
-fun HeaderSection(greeting: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 48.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(greeting, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
-            Text("Your Productivity Hub", color = MatrixCyan, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        }
+fun AddProductivityItemDialog(type: String, onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
+    var title by remember { mutableStateOf("") }
+    var content by remember { mutableStateOf("") }
 
-        Box(contentAlignment = Alignment.Center) {
-            Box(Modifier.size(50.dp).blur(20.dp).background(MatrixCyan.copy(alpha = 0.2f), CircleShape))
-            Icon(Icons.Rounded.Psychology, null, tint = MatrixCyan, modifier = Modifier.size(42.dp))
-        }
-    }
-}
-
-@Composable
-fun CapsuleTabRow(selected: Int, onSelect: (Int) -> Unit) {
-    Surface(
-        color = Color.White.copy(alpha = 0.05f),
-        shape = RoundedCornerShape(50),
-        border = BorderStroke(1.dp, MatrixPurple.copy(alpha = 0.4f)),
-        modifier = Modifier.fillMaxWidth().height(56.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            listOf("TASKS", "NOTES").forEachIndexed { index, title ->
-                val isSelected = selected == index
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable { onSelect(index) },
-                    contentAlignment = Alignment.Center
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFF1A1A1A),
+            border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.2f))
+        ) {
+            Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "ADD NEW ${type}",
+                    color = ElectricCyan,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 14.sp,
+                    letterSpacing = 2.sp
+                )
+                Spacer(Modifier.height(20.dp))
+                
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Title") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text(if (type == "TASKS") "Description" else "Content") },
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                )
+                Spacer(Modifier.height(24.dp))
+                
+                Button(
+                    onClick = { if (title.isNotBlank()) onConfirm(title, content) },
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        title,
-                        color = if (isSelected) MatrixCyan else Color.White.copy(alpha = 0.6f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 2.sp
-                    )
-                    if (isSelected) {
-                        Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp).width(40.dp).height(2.dp).background(MatrixCyan))
-                    }
+                    Text("CONFIRM", color = DeepBlack, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -155,113 +150,61 @@ fun CapsuleTabRow(selected: Int, onSelect: (Int) -> Unit) {
 }
 
 @Composable
-fun AllCaughtUpCard(onAdd: () -> Unit) {
+fun TabItem(label: String, isSelected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-        color = Color.White.copy(alpha = 0.03f),
-        shape = RoundedCornerShape(32.dp),
-        border = BorderStroke(1.dp, Brush.linearGradient(listOf(MatrixMagenta, MatrixPurple, MatrixCyan)))
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSelected) ElectricCyan else Color.Transparent,
+        modifier = modifier
     ) {
-        Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(140.dp)) {
-                Box(Modifier.size(90.dp).blur(35.dp).background(MatrixCyan.copy(alpha = 0.3f), CircleShape))
-                Icon(Icons.Rounded.TaskAlt, null, tint = MatrixCyan, modifier = Modifier.size(90.dp))
-            }
-
-            Text(
-                text = buildAnnotatedString {
-                    append("You're all ")
-                    withStyle(style = SpanStyle(color = MatrixCyan)) { append("caught up") }
-                    append(" 🎉")
-                },
-                color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(32.dp))
-
-            Surface(
-                onClick = onAdd,
-                color = Color.Transparent,
-                shape = RoundedCornerShape(50),
-                border = BorderStroke(2.dp, MatrixMagenta)
-            ) {
-                Text(
-                    "Create Task",
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 48.dp, vertical = 14.dp),
-                    fontWeight = FontWeight.Black
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun ActionFab(onClick: () -> Unit) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulse by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse), label = "pulse"
-    )
-
-    Box(contentAlignment = Alignment.Center) {
-        // Breathing pulse glow
         Box(
-            Modifier
-                .size(72.dp * pulse)
-                .background(MatrixCyan.copy(alpha = 0.12f), CircleShape)
-        )
-
-        FloatingActionButton(
-            onClick = onClick,
-            containerColor = MatrixCyan,
-            contentColor = Color.Black,
-            modifier = Modifier.size(64.dp),
-            shape = CircleShape,
-            elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
+            modifier = Modifier.padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Rounded.Add, "Add", modifier = Modifier.size(36.dp))
+            Text(
+                label,
+                color = if (isSelected) DeepBlack else Color.Gray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
         }
     }
 }
 
 @Composable
-fun CosmicBackground() {
-    val infiniteTransition = rememberInfiniteTransition(label = "stars")
-    val stars = remember { List(60) { Offset(Random.nextFloat(), Random.nextFloat()) } }
-    val animOffset by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(25000, easing = LinearEasing), RepeatMode.Reverse), label = "nebula"
-    )
-
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        drawCircle(
-            brush = Brush.radialGradient(listOf(MatrixCyan.copy(alpha = 0.12f), Color.Transparent)),
-            radius = size.width,
-            center = Offset(size.width * animOffset, size.height * (1 - animOffset))
-        )
-        stars.forEach { star ->
-            drawCircle(Color.White.copy(alpha = 0.3f), radius = 1.dp.toPx(), center = Offset(star.x * size.width, star.y * size.height))
-        }
-    }
-}
-
-@Composable
-fun TaskList(tasks: List<Task>, onToggle: (Task) -> Unit, onDelete: (String) -> Unit) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(bottom = 120.dp)) {
+fun TaskList(tasks: List<Task>, onDelete: (String) -> Unit) {
+    LazyColumn(
+        contentPadding = PaddingValues(start = 24.dp, top = 8.dp, end = 24.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         items(tasks) { task ->
             Surface(
-                color = Color.White.copy(alpha = 0.05f),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White.copy(alpha = 0.03f),
                 border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))
             ) {
-                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = task.status == "Completed", onCheckedChange = { onToggle(task) }, colors = CheckboxDefaults.colors(checkedColor = MatrixCyan))
-                    Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(task.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        task.description?.let { Text(it, color = Color.Gray, fontSize = 12.sp) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .border(1.5.dp, ElectricCyan, CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(task.title ?: "Untitled Task", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        if (!task.description.isNullOrEmpty()) {
+                            Text(task.description ?: "", color = Color.Gray, fontSize = 12.sp)
+                        }
                     }
-                    IconButton(onClick = { onDelete(task.id) }) { Icon(Icons.Rounded.Delete, null, tint = Color(0xFFFF5252).copy(alpha = 0.7f)) }
+                    IconButton(onClick = { task.id?.let { onDelete(it) } }) {
+                        Icon(Icons.Rounded.Delete, "Delete", tint = Color.Red.copy(alpha = 0.6f), modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }
@@ -270,48 +213,83 @@ fun TaskList(tasks: List<Task>, onToggle: (Task) -> Unit, onDelete: (String) -> 
 
 @Composable
 fun NoteList(notes: List<Note>, onDelete: (String) -> Unit) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(bottom = 120.dp)) {
+    LazyColumn(
+        contentPadding = PaddingValues(start = 24.dp, top = 8.dp, end = 24.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         items(notes) { note ->
             Surface(
-                color = Color.White.copy(alpha = 0.05f),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White.copy(alpha = 0.03f),
                 border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))
             ) {
-                Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(note.title, color = MatrixCyan, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { onDelete(note.id) }) { Icon(Icons.Rounded.Delete, null, tint = Color(0xFFFF5252).copy(alpha = 0.7f), modifier = Modifier.size(18.dp)) }
+                        Text(note.title ?: "Untitled", color = ElectricCyan, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { note.id?.let { onDelete(it) } }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Rounded.Delete, "Delete", tint = Color.Red.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+                        }
                     }
-                    note.content?.let { Text(it, color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(note.content ?: "", color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable fun AddTaskDialog(onDismiss: () -> Unit, onAdd: (String, String, String) -> Unit) {
-    var title by remember { mutableStateOf("") }
-    var desc by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, containerColor = Color(0xFF0A0A15),
-        title = { Text("New Task", color = MatrixCyan, fontWeight = FontWeight.Black) },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MatrixCyan, focusedTextColor = Color.White, unfocusedTextColor = Color.White))
-            OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Details") }, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MatrixCyan, focusedTextColor = Color.White, unfocusedTextColor = Color.White))
-        }},
-        confirmButton = { Button(onClick = { if (title.isNotEmpty()) onAdd(title, desc, "Medium") }, colors = ButtonDefaults.buttonColors(containerColor = MatrixCyan, contentColor = Color.Black)) { Text("Add") } }
-    )
-}
-
-@Composable fun AddNoteDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
-    var title by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, containerColor = Color(0xFF0A0A15),
-        title = { Text("New Note", color = MatrixCyan, fontWeight = FontWeight.Black) },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MatrixCyan, focusedTextColor = Color.White, unfocusedTextColor = Color.White))
-            OutlinedTextField(value = content, onValueChange = { content = it }, label = { Text("Content") }, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MatrixCyan, focusedTextColor = Color.White, unfocusedTextColor = Color.White))
-        }},
-        confirmButton = { Button(onClick = { if (title.isNotEmpty()) onAdd(title, content) }, colors = ButtonDefaults.buttonColors(containerColor = MatrixCyan, contentColor = Color.Black)) { Text("Sync") } }
-    )
+@Composable
+fun IdeaList(ideas: List<Idea>, onDelete: (String) -> Unit) {
+    LazyColumn(
+        contentPadding = PaddingValues(start = 24.dp, top = 8.dp, end = 24.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        items(ideas) { idea ->
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF0A0A0A),
+                border = BorderStroke(1.dp, Brush.linearGradient(listOf(ElectricCyan.copy(alpha = 0.5f), Color.Transparent)))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Lightbulb, null, tint = Color(0xFFFFD54F), modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(idea.title, color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { onDelete(idea.id) }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Rounded.Delete, "Delete", tint = Color.Red.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Text(idea.content, color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, lineHeight = 22.sp)
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    Button(
+                        onClick = { /* AI Execution Trigger */ },
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan.copy(alpha = 0.1f)),
+                        border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.AutoAwesome, null, tint = ElectricCyan, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("HELP ME EXECUTE THIS IDEA", color = ElectricCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

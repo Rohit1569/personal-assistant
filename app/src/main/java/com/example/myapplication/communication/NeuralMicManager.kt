@@ -21,7 +21,7 @@ class NeuralMicManager @Inject constructor(
     private var onResult: ((String) -> Unit)? = null
     private var onStateChange: ((Boolean) -> Unit)? = null
 
-    fun startListening(onState: (Boolean) -> Unit, onResultFound: (String) -> Unit) {
+    fun startListening(locale: Locale = Locale.getDefault(), onState: (Boolean) -> Unit, onResultFound: (String) -> Unit) {
         this.onResult = onResultFound
         this.onStateChange = onState
 
@@ -32,7 +32,9 @@ class NeuralMicManager @Inject constructor(
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, locale.toString())
+            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, locale.toString())
         }
 
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {

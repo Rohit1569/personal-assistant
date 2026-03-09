@@ -20,6 +20,7 @@ import com.example.myapplication.ui.theme.*
 
 @Composable
 fun AuthScreen(viewModel: AuthViewModel) {
+    var name by remember { mutableStateOf("") }
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
@@ -36,10 +37,6 @@ fun AuthScreen(viewModel: AuthViewModel) {
     val scrollState = rememberScrollState()
 
     LaunchedEffect(state) {
-        if (state is AuthState.Idle && !isLogin) {
-            isLogin = true
-            isForgotPasswordMode = false
-        }
         if (state is AuthState.PasswordResetSuccess) {
             isLogin = true
             isForgotPasswordMode = false
@@ -82,7 +79,7 @@ fun AuthScreen(viewModel: AuthViewModel) {
                 }
             } else {
                 if (!isLogin && !isForgotPasswordMode) {
-                    // NEW FIELDS FOR SIGN-UP
+                    AuthTextField(name, { name = it }, "Username")
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AuthTextField(firstName, { firstName = it }, "First Name", Modifier.weight(1f))
                         AuthTextField(lastName, { lastName = it }, "Last Name", Modifier.weight(1f))
@@ -113,7 +110,8 @@ fun AuthScreen(viewModel: AuthViewModel) {
                             state is AuthState.PasswordResetOtpSent -> viewModel.resetPassword(otp, password)
                             isForgotPasswordMode -> viewModel.forgotPassword(email)
                             isLogin -> viewModel.login(email, password)
-                            else -> viewModel.signUp(
+                            else -> viewModel.signup(
+                                name = name,
                                 email = email, 
                                 password = password, 
                                 firstName = firstName,
@@ -129,6 +127,13 @@ fun AuthScreen(viewModel: AuthViewModel) {
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(if (isLogin) "LOGIN" else if (isForgotPasswordMode) "RESET" else "JOIN NEURAL CORE")
+                }
+            }
+
+            // Forgot Password Option (only in login mode)
+            if (isLogin && !isForgotPasswordMode && state !is AuthState.OtpSent) {
+                TextButton(onClick = { isForgotPasswordMode = true }) {
+                    Text("Forgot Password?", color = ElectricCyan, fontSize = 11.sp)
                 }
             }
 
