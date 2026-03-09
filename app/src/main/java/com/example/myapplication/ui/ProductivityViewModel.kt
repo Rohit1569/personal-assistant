@@ -9,7 +9,15 @@ import com.example.myapplication.models.Task
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
+
+// Local UI model for Ideas (Not stored in DB)
+data class Idea(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val content: String
+)
 
 @HiltViewModel
 class ProductivityViewModel @Inject constructor(
@@ -24,6 +32,10 @@ class ProductivityViewModel @Inject constructor(
     private val _notes = MutableStateFlow<List<Note>>(emptyList())
     val notes: StateFlow<List<Note>> = _notes.asStateFlow()
 
+    // NEW: Independent local state for Ideas
+    private val _ideas = MutableStateFlow<List<Idea>>(emptyList())
+    val ideas: StateFlow<List<Idea>> = _ideas.asStateFlow()
+
     fun setUserId(id: String) {
         if (_userId.value == id) return
         Log.d("PROD_VIEWMODEL", ">>> IDENTITY LINKED: $id")
@@ -32,7 +44,6 @@ class ProductivityViewModel @Inject constructor(
     }
 
     private fun startSync() {
-        // FIXED: Removed the argument to match the new zero-argument Repository signature
         viewModelScope.launch {
             repository.getTasks().collect { _tasks.value = it }
         }
@@ -49,6 +60,26 @@ class ProductivityViewModel @Inject constructor(
         }
     }
 
+    fun addNote(title: String, content: String?) {
+        val uid = _userId.value ?: return
+        viewModelScope.launch {
+            repository.createNote(Note(userId = uid, title = title, content = content))
+            repository.triggerRefresh()
+        }
+    }
+
+    // NEW: Logic to add ideas only to the local list
+    fun addIdea(title: String, content: String) {
+        val newList = _ideas.value.toMutableList().apply {
+            add(0, Idea(title = title, content = content))
+        }
+        _ideas.value = newList
+    }
+
+    fun deleteIdea(id: String) {
+        _ideas.value = _ideas.value.filter { it.id != id }
+    }
+
     fun toggleTaskStatus(task: Task) {
         viewModelScope.launch {
             val newStatus = if (task.status == "Pending") "Completed" else "Pending"
@@ -60,14 +91,6 @@ class ProductivityViewModel @Inject constructor(
     fun deleteTask(id: String) {
         viewModelScope.launch {
             repository.deleteTask(id)
-            repository.triggerRefresh()
-        }
-    }
-
-    fun addNote(title: String, content: String?) {
-        val uid = _userId.value ?: return
-        viewModelScope.launch {
-            repository.createNote(Note(userId = uid, title = title, content = content))
             repository.triggerRefresh()
         }
     }

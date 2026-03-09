@@ -1,9 +1,13 @@
 package com.example.myapplication.auth
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.myapplication.api.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -13,65 +17,76 @@ import javax.inject.Inject
 sealed class AuthState {
     object Idle : AuthState()
     object Loading : AuthState()
-    object OtpSent : AuthState()
-    object PasswordResetOtpSent : AuthState()
-    object PasswordResetSuccess : AuthState()
     data class Authenticated(val token: String) : AuthState()
     data class Error(val message: String) : AuthState()
+    data class OtpSent(val email: String) : AuthState()
+    data class PasswordResetOtpSent(val email: String) : AuthState()
+    object PasswordResetSuccess : AuthState()
 }
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
     private val authApi: AuthApi,
-    private val tokenManager: TokenManager
+    private val tokenManager: TokenManager,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
-    private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
+    private val _authState = MutableStateFlow<AuthState>(if (tokenManager.getToken() != null) AuthState.Authenticated(tokenManager.getToken()!!) else AuthState.Idle)
     val authState: StateFlow<AuthState> = _authState
 
-    private var pendingEmail: String? = null
+    @SuppressLint("HardwareIds")
+    private val deviceId: String = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
 
-    init {
-        checkPersistedToken()
-    }
+    private var currentEmail: String? = null
 
-    private fun checkPersistedToken() {
-        val token = tokenManager.getToken()
-        if (token != null) {
-            _authState.value = AuthState.Authenticated(token)
+    fun signup(name: String, email: String, password: String, firstName: String, lastName: String, address: String, cellPhone: String, reason: String) {
+        viewModelScope.launch {
+            currentEmail = email
+            _authState.value = AuthState.Loading
+            try {
+                val response = authApi.signup(SignupRequest(name, email, password, firstName, lastName, address, cellPhone, reason))
+                if (response.isSuccessful) {
+                    _authState.value = AuthState.OtpSent(email)
+                } else {
+                    val errorBody = response.errorBody()?.string()
+                    _authState.value = AuthState.Error(parseErrorMessage(errorBody) ?: "Signup failed")
+                }
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error(e.message ?: "Network error")
+            }
         }
     }
 
-    fun signUp(
-        email: String, 
-        password: String, // Changed from pass to password
-        firstName: String,
-        lastName: String,
-        address: String,
-        cellPhone: String,
-        reason: String
-    ) {
+    fun verifyOtp(otp: String) {
+        val email = currentEmail ?: return
         viewModelScope.launch {
             _authState.value = AuthState.Loading
             try {
-                // Combine names for the legacy 'name' field
-                val fullName = "$firstName $lastName".trim()
-                val request = SignupRequest(
-                    name = fullName,
-                    email = email,
-                    password = password,
-                    firstName = firstName,
-                    lastName = lastName,
-                    address = address,
-                    cellPhone = cellPhone,
-                    reasonForChoice = reason
-                )
-                val response = authApi.signup(request)
+                val response = authApi.verifyOtp(VerifyOtpRequest(email, otp, deviceId))
                 if (response.isSuccessful) {
-                    pendingEmail = email
-                    _authState.value = AuthState.OtpSent
+                    _authState.value = AuthState.Idle
                 } else {
-                    _authState.value = AuthState.Error(extractError(response.errorBody()?.string()))
+                    val errorBody = response.errorBody()?.string()
+                    _authState.value = AuthState.Error(parseErrorMessage(errorBody) ?: "Invalid OTP")
+                }
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error(e.message ?: "Network error")
+            }
+        }
+    }
+
+    fun login(email: String, password: String) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            try {
+                val response = authApi.login(LoginRequest(email, password, deviceId))
+                if (response.isSuccessful && response.body() != null) {
+                    val token = response.body()!!.token
+                    tokenManager.saveToken(token)
+                    _authState.value = AuthState.Authenticated(token)
+                } else {
+                    val errorBody = response.errorBody()?.string()
+                    _authState.value = AuthState.Error(parseErrorMessage(errorBody) ?: "Login failed")
                 }
             } catch (e: Exception) {
                 _authState.value = AuthState.Error(e.message ?: "Network error")
@@ -81,14 +96,15 @@ class AuthViewModel @Inject constructor(
 
     fun forgotPassword(email: String) {
         viewModelScope.launch {
+            currentEmail = email
             _authState.value = AuthState.Loading
             try {
                 val response = authApi.forgotPassword(ForgotPasswordRequest(email))
                 if (response.isSuccessful) {
-                    pendingEmail = email
-                    _authState.value = AuthState.PasswordResetOtpSent
+                    _authState.value = AuthState.PasswordResetOtpSent(email)
                 } else {
-                    _authState.value = AuthState.Error(extractError(response.errorBody()?.string()))
+                    val errorBody = response.errorBody()?.string()
+                    _authState.value = AuthState.Error(parseErrorMessage(errorBody) ?: "Reset request failed")
                 }
             } catch (e: Exception) {
                 _authState.value = AuthState.Error(e.message ?: "Network error")
@@ -96,16 +112,17 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun resetPassword(otp: String, newPass: String) {
-        val email = pendingEmail ?: return
+    fun resetPassword(otp: String, newPassword: String) {
+        val email = currentEmail ?: return
         viewModelScope.launch {
             _authState.value = AuthState.Loading
             try {
-                val response = authApi.resetPassword(ResetPasswordRequest(email, otp, newPass))
+                val response = authApi.resetPassword(ResetPasswordRequest(email, otp, newPassword))
                 if (response.isSuccessful) {
                     _authState.value = AuthState.PasswordResetSuccess
                 } else {
-                    _authState.value = AuthState.Error(extractError(response.errorBody()?.string()))
+                    val errorBody = response.errorBody()?.string()
+                    _authState.value = AuthState.Error(parseErrorMessage(errorBody) ?: "Password reset failed")
                 }
             } catch (e: Exception) {
                 _authState.value = AuthState.Error(e.message ?: "Network error")
@@ -113,47 +130,12 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun verifyOtp(otp: String) {
-        val email = pendingEmail ?: return
-        viewModelScope.launch {
-            _authState.value = AuthState.Loading
-            try {
-                val response = authApi.verifyOtp(VerifyOtpRequest(email, otp))
-                if (response.isSuccessful) {
-                    _authState.value = AuthState.Idle 
-                } else {
-                    _authState.value = AuthState.Error(extractError(response.errorBody()?.string()))
-                }
-            } catch (e: Exception) {
-                _authState.value = AuthState.Error(e.message ?: "Verification error")
-            }
-        }
-    }
-
-    fun login(email: String, pass: String) {
-        viewModelScope.launch {
-            _authState.value = AuthState.Loading
-            try {
-                val response = authApi.login(LoginRequest(email, pass))
-                if (response.isSuccessful && response.body() != null) {
-                    val token = response.body()!!.token
-                    tokenManager.saveToken(token)
-                    _authState.value = AuthState.Authenticated(token)
-                } else {
-                    _authState.value = AuthState.Error(extractError(response.errorBody()?.string()))
-                }
-            } catch (e: Exception) {
-                _authState.value = AuthState.Error("Login connection error")
-            }
-        }
-    }
-
-    private fun extractError(errorBody: String?): String {
+    private fun parseErrorMessage(errorBody: String?): String? {
         return try {
-            val json = JSONObject(errorBody)
-            json.optString("message", json.optString("error", "Action Failed"))
+            val json = JSONObject(errorBody ?: "")
+            json.optString("message")
         } catch (e: Exception) {
-            "Unknown error"
+            null
         }
     }
 

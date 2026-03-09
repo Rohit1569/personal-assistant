@@ -4,6 +4,18 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.POST
 
+data class LoginRequest(
+    val email: String, 
+    val password: String,
+    val deviceId: String // Added for device binding
+)
+
+data class VerifyOtpRequest(
+    val email: String, 
+    val otp: String,
+    val deviceId: String // Added for device binding
+)
+
 data class SignupRequest(
     val name: String,
     val email: String,
@@ -15,8 +27,6 @@ data class SignupRequest(
     val reasonForChoice: String
 )
 
-data class LoginRequest(val email: String, val password: String)
-data class VerifyOtpRequest(val email: String, val otp: String)
 data class ForgotPasswordRequest(val email: String)
 data class ResetPasswordRequest(val email: String, val otp: String, val newPassword: String)
 data class AuthResponse(val token: String, val user: UserInfo)

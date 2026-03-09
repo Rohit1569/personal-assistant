@@ -44,11 +44,19 @@ class SchedulingViewModel @Inject constructor(
     private val _isListening = MutableStateFlow(false)
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
 
+    private val _selectedLocale = MutableStateFlow(Locale.getDefault())
+    val selectedLocale: StateFlow<Locale> = _selectedLocale.asStateFlow()
+
     private var userToken: String? = null
     private var userId: String? = null
 
     init {
         observeAppointments()
+    }
+
+    fun setLanguage(locale: Locale) {
+        _selectedLocale.value = locale
+        ttsManager.setLanguage(locale)
     }
 
     fun setToken(token: String) {
@@ -72,6 +80,7 @@ class SchedulingViewModel @Inject constructor(
 
     fun startNeuralListening() {
         neuralMicManager.startListening(
+            locale = _selectedLocale.value,
             onState = { listening -> _isListening.value = listening },
             onResultFound = { command -> handleVoiceCommand(command) }
         )
@@ -118,12 +127,38 @@ class SchedulingViewModel @Inject constructor(
                 }
 
                 is IntentResult.Query -> {
-                    if (result.query == "OPEN_FINANCE_OVERVIEW") {
-                        speakAndConfirm("PREPARING FINANCIAL ANALYTICS. SWITCHING VIEW.")
-                        // Logic to navigate to Finance could be handled by a UI listener or shared state
-                    } else if (result.query.startsWith("OPEN_MAPS|")) {
-                        externalAppManager.launchAppWithSearch("MAPS", result.query.substringAfter("|"))
+                    val query = result.query
+                    when {
+                        query == "OPEN_FINANCE_OVERVIEW" -> {
+                            speakAndConfirm("PREPARING FINANCIAL ANALYTICS.")
+                        }
+                        query.startsWith("OPEN_MAPS|") -> {
+                            speakAndConfirm("SEARCHING NAVIGATION DATA...")
+                            externalAppManager.launchAppWithSearch("MAPS", query.substringAfter("|"))
+                        }
+                        query.startsWith("OPEN_APP|YOUTUBE|") -> {
+                            speakAndConfirm("OPENING MEDIA STREAM...")
+                            externalAppManager.launchAppWithSearch("YOUTUBE", query.substringAfter("YOUTUBE|"))
+                        }
+                        query.startsWith("OPEN_APP|AMAZON|") -> {
+                            speakAndConfirm("BROWSING MARKETPLACE...")
+                            externalAppManager.launchAppWithSearch("AMAZON", query.substringAfter("AMAZON|"))
+                        }
+                        query.startsWith("OPEN_BROWSER|") -> {
+                            speakAndConfirm("SEARCHING KNOWLEDGE BASE...")
+                            externalAppManager.launchAppWithSearch("BROWSER", query.substringAfter("|"))
+                        }
                     }
+                }
+
+                is IntentResult.BookCab -> {
+                    speakAndConfirm("REQUESTING ${result.provider} TO ${result.destination.uppercase()}...")
+                    cabBookingManager.bookCab(result.provider, result.destination)
+                }
+
+                is IntentResult.Call -> {
+                    speakAndConfirm("INITIATING VOICE CHANNEL TO ${result.recipient.uppercase()}...")
+                    communicationManager.initiateCall(result.recipient)
                 }
 
                 is IntentResult.CalendarInsert -> {

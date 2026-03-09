@@ -35,6 +35,23 @@ class CommunicationManager @Inject constructor(private val context: Context) {
         }
     }
 
+    fun initiateCall(recipient: String) {
+        val intent = Intent(Intent.ACTION_CALL).apply {
+            data = Uri.parse("tel:$recipient")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            // Fallback to Dial pad if CALL permission is missing or fails
+            val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                data = Uri.parse("tel:$recipient")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(dialIntent)
+        }
+    }
+
     private fun sendDirectSms(phone: String, message: String) {
         try {
             val smsManager: SmsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

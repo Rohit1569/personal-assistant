@@ -17,8 +17,8 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // --- CLOUD CONFIGURATION ---
-    private const val IS_PRODUCTION = true 
+    // --- DEVELOPMENT CONFIGURATION ---
+    private const val IS_PRODUCTION = true // SWITCHED TO LOCAL
     private const val PROD_URL = "https://kiwi-ai-backend.vercel.app/"
     
     // Replace this with your actual Mac IP if testing on a real device
@@ -51,7 +51,6 @@ object NetworkModule {
         val isEmulator = android.os.Build.PRODUCT.contains("sdk") || 
                         android.os.Build.MODEL.contains("Emulator")
         
-        // When IS_PRODUCTION is true, it will always use the hosted Vercel backend
         val finalUrl = when {
             IS_PRODUCTION -> PROD_URL
             isEmulator -> "http://10.0.2.2:5002/"
