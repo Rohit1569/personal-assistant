@@ -3,6 +3,8 @@ package com.example.myapplication.voice
 import com.example.myapplication.plugin.CommunicationApp
 import com.example.myapplication.plugin.IntentResult
 import java.util.Calendar
+import java.util.Locale
+import java.util.regex.Pattern
 
 class VoiceIntentProcessor {
 
@@ -123,7 +125,97 @@ class VoiceIntentProcessor {
                 IntentResult.Call(target)
             }
 
+            // --- 8. CALENDAR CRUD ---
+            lowerText.containsAny("calendar", "schedule", "agenda", "appointment", "meeting", "बैठक", "तय करो", "कैैलेंडर") -> {
+                when {
+                    lowerText.containsAny("delete", "remove", "cancel", "हटाओ", "रद्द") -> {
+                        val title = lowerText.replace("delete", "").replace("remove", "").replace("cancel", "").replace("meeting", "").replace("appointment", "").trim()
+                        IntentResult.CalendarDelete(title)
+                    }
+                    lowerText.containsAny("any", "what is", "is there", "show", "agenda", "क्या है", "दिखाओ") -> {
+                        val dateMillis = parseDate(lowerText)
+                        IntentResult.CalendarQuery(dateMillis, dateMillis + 86400000)
+                    }
+                    else -> parseCalendarInsert(lowerText)
+                }
+            }
+
             else -> IntentResult.Unrecognized(text)
         }
+    }
+
+    private fun parseDate(text: String): Long {
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+
+        // Tomorrow check
+        if (text.contains("tomorrow") || text.contains("कल")) {
+            calendar.add(Calendar.DAY_OF_YEAR, 1)
+            return calendar.timeInMillis
+        }
+
+        // Today check
+        if (text.contains("today") || text.contains("आज")) {
+            return calendar.timeInMillis
+        }
+
+        // Specific Date parsing (e.g. 25th March)
+        val monthMap = mapOf(
+            "january" to 0, "february" to 1, "march" to 2, "april" to 3, "may" to 4, "june" to 5,
+            "july" to 6, "august" to 7, "september" to 8, "october" to 9, "november" to 10, "december" to 11,
+            "जनवरी" to 0, "फरवरी" to 1, "मार्च" to 2, "अप्रैल" to 3, "मई" to 4, "जून" to 5,
+            "जुलाई" to 6, "अगस्त" to 7, "सितंबर" to 8, "अक्टूबर" to 9, "नवंबर" to 10, "दिसंबर" to 11
+        )
+
+        for ((monthName, monthIdx) in monthMap) {
+            if (text.contains(monthName)) {
+                val dayRegex = Regex("(\\d+)")
+                val match = dayRegex.find(text)
+                if (match != null) {
+                    val day = match.groupValues[1].toInt()
+                    calendar.set(Calendar.MONTH, monthIdx)
+                    calendar.set(Calendar.DAY_OF_MONTH, day)
+                    // If the date has already passed this year, assume next year? No, usually current year.
+                    return calendar.timeInMillis
+                }
+            }
+        }
+
+        return calendar.timeInMillis
+    }
+
+    private fun parseCalendarInsert(text: String): IntentResult {
+        val calendar = Calendar.getInstance()
+        
+        // Extract Time
+        val timeRegex = Regex("(\\d+)\\s?(am|pm|बजे)")
+        val timeMatch = timeRegex.find(text)
+        if (timeMatch != null) {
+            var hour = timeMatch.groupValues[1].toInt()
+            val marker = timeMatch.groupValues[2]
+            if (marker == "pm" && hour < 12) hour += 12
+            if (marker == "am" && hour == 12) hour = 0
+            calendar.set(Calendar.HOUR_OF_DAY, hour)
+            calendar.set(Calendar.MINUTE, 0)
+        }
+
+        // Extract Date
+        val dateMillis = parseDate(text)
+        val dateCal = Calendar.getInstance().apply { timeInMillis = dateMillis }
+        calendar.set(Calendar.YEAR, dateCal.get(Calendar.YEAR))
+        calendar.set(Calendar.MONTH, dateCal.get(Calendar.MONTH))
+        calendar.set(Calendar.DAY_OF_MONTH, dateCal.get(Calendar.DAY_OF_MONTH))
+
+        val title = text.substringAfter("schedule ").substringAfter("book ")
+            .substringBefore(" at").substringBefore(" on").substringBefore(" को").trim()
+        
+        return IntentResult.CalendarInsert(
+            title = if (title.isEmpty() || title == text) "Meeting" else title,
+            startTime = calendar.timeInMillis,
+            durationMinutes = 60
+        )
     }
 }

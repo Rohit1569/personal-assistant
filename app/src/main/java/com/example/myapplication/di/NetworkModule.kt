@@ -17,12 +17,12 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // --- DEVELOPMENT CONFIGURATION ---
-    private const val IS_PRODUCTION = true // SWITCHED TO LOCAL
+    // --- CONFIGURATION ---
+    private const val IS_PRODUCTION = false 
     private const val PROD_URL = "https://kiwi-ai-backend.vercel.app/"
     
-    // Replace this with your actual Mac IP if testing on a real device
-    private const val MY_MAC_IP = "192.168.0.5" 
+    // Updated to your current Mac IP address
+    private const val MY_MAC_IP = "192.168.0.9"
 
     @Provides
     @Singleton
@@ -49,11 +49,12 @@ object NetworkModule {
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
         val isEmulator = android.os.Build.PRODUCT.contains("sdk") || 
-                        android.os.Build.MODEL.contains("Emulator")
+                        android.os.Build.MODEL.contains("Emulator") ||
+                        android.os.Build.FINGERPRINT.contains("generic")
         
         val finalUrl = when {
             IS_PRODUCTION -> PROD_URL
-            isEmulator -> "http://10.0.2.2:5002/"
+            isEmulator -> "http://10.0.2.2:5002/" // Standard emulator loopback
             else -> "http://$MY_MAC_IP:5002/" 
         }
 
@@ -71,4 +72,6 @@ object NetworkModule {
     @Provides @Singleton fun provideFinanceApi(r: Retrofit): FinanceApi = r.create(FinanceApi::class.java)
     @Provides @Singleton fun provideProductivityApi(r: Retrofit): ProductivityApi = r.create(ProductivityApi::class.java)
     @Provides @Singleton fun provideFitnessApi(r: Retrofit): FitnessApi = r.create(FitnessApi::class.java)
+    @Provides @Singleton fun provideAdminApi(r: Retrofit): AdminApi = r.create(AdminApi::class.java)
+    @Provides @Singleton fun provideSubscriptionApi(r: Retrofit): SubscriptionApi = r.create(SubscriptionApi::class.java)
 }

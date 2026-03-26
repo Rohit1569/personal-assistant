@@ -79,7 +79,8 @@ fun AiAssistantScreen(
         // Top Bar: Logout & Language Selector
         Row(
             modifier = Modifier.align(Alignment.TopEnd).padding(top = 48.dp, end = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // INCREASED GAP: From 8.dp to 16.dp
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             IconButton(
                 onClick = { showLanguageSelector = true },
