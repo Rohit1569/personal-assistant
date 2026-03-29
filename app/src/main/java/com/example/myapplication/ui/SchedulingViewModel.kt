@@ -86,13 +86,6 @@ class SchedulingViewModel @Inject constructor(
         )
     }
 
-    private fun trackUsage(feature: String) {
-        val token = userToken ?: return
-        viewModelScope.launch {
-            try { usageApi.incrementStat(token, IncrementRequest(feature)) } catch (e: Exception) { }
-        }
-    }
-
     fun handleVoiceCommand(text: String) {
         viewModelScope.launch {
             _isListening.value = false
@@ -129,25 +122,11 @@ class SchedulingViewModel @Inject constructor(
                 is IntentResult.Query -> {
                     val query = result.query
                     when {
-                        query == "OPEN_FINANCE_OVERVIEW" -> {
-                            speakAndConfirm("PREPARING FINANCIAL ANALYTICS.")
-                        }
-                        query.startsWith("OPEN_MAPS|") -> {
-                            speakAndConfirm("SEARCHING NAVIGATION DATA...")
-                            externalAppManager.launchAppWithSearch("MAPS", query.substringAfter("|"))
-                        }
-                        query.startsWith("OPEN_APP|YOUTUBE|") -> {
-                            speakAndConfirm("OPENING MEDIA STREAM...")
-                            externalAppManager.launchAppWithSearch("YOUTUBE", query.substringAfter("YOUTUBE|"))
-                        }
-                        query.startsWith("OPEN_APP|AMAZON|") -> {
-                            speakAndConfirm("BROWSING MARKETPLACE...")
-                            externalAppManager.launchAppWithSearch("AMAZON", query.substringAfter("AMAZON|"))
-                        }
-                        query.startsWith("OPEN_BROWSER|") -> {
-                            speakAndConfirm("SEARCHING KNOWLEDGE BASE...")
-                            externalAppManager.launchAppWithSearch("BROWSER", query.substringAfter("|"))
-                        }
+                        query == "OPEN_FINANCE_OVERVIEW" -> speakAndConfirm("PREPARING FINANCIAL ANALYTICS.")
+                        query.startsWith("OPEN_MAPS|") -> externalAppManager.launchAppWithSearch("MAPS", query.substringAfter("|"))
+                        query.startsWith("OPEN_APP|YOUTUBE|") -> externalAppManager.launchAppWithSearch("YOUTUBE", query.substringAfter("YOUTUBE|"))
+                        query.startsWith("OPEN_APP|AMAZON|") -> externalAppManager.launchAppWithSearch("AMAZON", query.substringAfter("AMAZON|"))
+                        query.startsWith("OPEN_BROWSER|") -> externalAppManager.launchAppWithSearch("BROWSER", query.substringAfter("|"))
                     }
                 }
 
@@ -162,8 +141,32 @@ class SchedulingViewModel @Inject constructor(
                 }
 
                 is IntentResult.CalendarInsert -> {
-                    speakAndConfirm("SCHEDULING MEETING: ${result.title.uppercase()}.")
+                    val formattedDate = SimpleDateFormat("MMMM dd 'at' HH:mm", Locale.getDefault()).format(Date(result.startTime))
+                    speakAndConfirm("SCHEDULING ${result.title.uppercase()} ON $formattedDate.")
                     backgroundManager.insertCalendarEventBackground(result.title, result.startTime, result.durationMinutes, result.location)
+                }
+
+                is IntentResult.CalendarQuery -> {
+                    speakAndConfirm("SCANNING YOUR CALENDAR...")
+                    val eventsResult = backgroundManager.queryCalendarEvents(result.startTime, result.endTime)
+                    eventsResult.onSuccess { events ->
+                        if (events.isEmpty()) {
+                            speakAndConfirm("I FOUND NO MEETINGS FOR THAT DATE.")
+                        } else {
+                            val eventTitles = events.joinToString(", ") { it.title }
+                            speakAndConfirm("I FOUND ${events.size} MEETINGS: $eventTitles.")
+                        }
+                    }
+                }
+
+                // NEW: Handle Calendar Deletion
+                is IntentResult.CalendarDelete -> {
+                    speakAndConfirm("ATTEMPTING TO REMOVE '${result.title.uppercase()}' FROM CALENDAR...")
+                    val deleteResult = backgroundManager.deleteCalendarEvent(result.title)
+                    deleteResult.onSuccess { count ->
+                        if (count > 0) speakAndConfirm("SUCCESS. I REMOVED $count MATCHING EVENTS.")
+                        else speakAndConfirm("I COULD NOT FIND ANY MATCHING EVENTS TO DELETE.")
+                    }
                 }
 
                 is IntentResult.Unrecognized -> {
@@ -183,9 +186,5 @@ class SchedulingViewModel @Inject constructor(
     private fun speakAndConfirm(text: String) {
         _uiState.value = _uiState.value.copy(lastVoiceCommandResult = text)
         ttsManager.speak(text)
-    }
-
-    private fun formatTime(millis: Long): String {
-        return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(millis))
     }
 }

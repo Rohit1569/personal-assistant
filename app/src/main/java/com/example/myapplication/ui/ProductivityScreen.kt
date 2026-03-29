@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -74,7 +75,11 @@ fun ProductivityScreen(viewModel: ProductivityViewModel) {
                 Spacer(modifier = Modifier.height(24.dp))
 
                 when (activeTab) {
-                    "TASKS" -> TaskList(tasks, onDelete = { viewModel.deleteTask(it) })
+                    "TASKS" -> TaskList(
+                        tasks, 
+                        onDelete = { viewModel.deleteTask(it) },
+                        onToggleStatus = { viewModel.toggleTaskStatus(it) }
+                    )
                     "NOTES" -> NoteList(notes, onDelete = { viewModel.deleteNote(it) })
                     "IDEAS" -> IdeaList(ideas, onDelete = { viewModel.deleteIdea(it) })
                 }
@@ -173,12 +178,13 @@ fun TabItem(label: String, isSelected: Boolean, modifier: Modifier, onClick: () 
 }
 
 @Composable
-fun TaskList(tasks: List<Task>, onDelete: (String) -> Unit) {
+fun TaskList(tasks: List<Task>, onDelete: (String) -> Unit, onToggleStatus: (Task) -> Unit) {
     LazyColumn(
         contentPadding = PaddingValues(start = 24.dp, top = 8.dp, end = 24.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(tasks) { task ->
+            val isCompleted = task.status == "Completed"
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = Color.White.copy(alpha = 0.03f),
@@ -190,16 +196,38 @@ fun TaskList(tasks: List<Task>, onDelete: (String) -> Unit) {
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Toggable Check Indicator
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(if (isCompleted) ElectricCyan else Color.Transparent)
                             .border(1.5.dp, ElectricCyan, CircleShape)
-                    )
+                            .clickable { onToggleStatus(task) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isCompleted) {
+                            Icon(Icons.Rounded.Check, null, tint = DeepBlack, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    
                     Spacer(modifier = Modifier.width(16.dp))
+                    
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(task.title ?: "Untitled Task", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(
+                            text = task.title ?: "Untitled Task", 
+                            color = if (isCompleted) Color.Gray else Color.White, 
+                            fontWeight = FontWeight.Bold, 
+                            fontSize = 15.sp,
+                            textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                        )
                         if (!task.description.isNullOrEmpty()) {
-                            Text(task.description ?: "", color = Color.Gray, fontSize = 12.sp)
+                            Text(
+                                text = task.description ?: "", 
+                                color = Color.Gray.copy(alpha = 0.7f), 
+                                fontSize = 12.sp,
+                                textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                            )
                         }
                     }
                     IconButton(onClick = { task.id?.let { onDelete(it) } }) {

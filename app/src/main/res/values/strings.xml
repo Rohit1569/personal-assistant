@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">KIWI AI</string>
-    <string name="accessibility_description">KIWI AI uses this service to automatically click the send button in WhatsApp when you give a voice command to send a message. It does not read your screen data or access personal information from other apps.</string>
+    <string name="accessibility_service_description">KIWI AI uses this service to automatically click the send button in WhatsApp, SMS, and Email apps when you give a voice command to send a message. It does not store your private data or access information from other apps.</string>
 </resources>

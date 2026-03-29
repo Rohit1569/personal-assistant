@@ -19,7 +19,11 @@ class TokenManager @Inject constructor(@ApplicationContext context: Context) {
     }
 
     fun clearToken() {
-        prefs.edit().remove("jwt_token").apply()
+        // Reset both token and setup flag on logout
+        prefs.edit()
+            .remove("jwt_token")
+            .remove("setup_complete_v1")
+            .apply()
     }
 
     fun isSetupComplete(): Boolean {

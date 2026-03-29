@@ -22,6 +22,7 @@ sealed class AuthState {
     data class OtpSent(val email: String) : AuthState()
     data class PasswordResetOtpSent(val email: String) : AuthState()
     object PasswordResetSuccess : AuthState()
+    object VoiceEnrollmentRequired : AuthState()
 }
 
 @HiltViewModel
@@ -64,7 +65,7 @@ class AuthViewModel @Inject constructor(
             try {
                 val response = authApi.verifyOtp(VerifyOtpRequest(email, otp, deviceId))
                 if (response.isSuccessful) {
-                    _authState.value = AuthState.Idle
+                    _authState.value = AuthState.VoiceEnrollmentRequired
                 } else {
                     val errorBody = response.errorBody()?.string()
                     _authState.value = AuthState.Error(parseErrorMessage(errorBody) ?: "Invalid OTP")
@@ -81,15 +82,43 @@ class AuthViewModel @Inject constructor(
             try {
                 val response = authApi.login(LoginRequest(email, password, deviceId))
                 if (response.isSuccessful && response.body() != null) {
-                    val token = response.body()!!.token
-                    tokenManager.saveToken(token)
-                    _authState.value = AuthState.Authenticated(token)
+                    val body = response.body()!!
+                    tokenManager.saveToken(body.token)
+                    
+                    // CRITICAL FIX: If backend says enrollment is needed, trigger it now
+                    if (body.needsVoiceEnrollment) {
+                        _authState.value = AuthState.VoiceEnrollmentRequired
+                    } else {
+                        _authState.value = AuthState.Authenticated(body.token)
+                    }
                 } else {
                     val errorBody = response.errorBody()?.string()
                     _authState.value = AuthState.Error(parseErrorMessage(errorBody) ?: "Login failed")
                 }
             } catch (e: Exception) {
                 _authState.value = AuthState.Error(e.message ?: "Network error")
+            }
+        }
+    }
+
+    fun saveVoicePrint(signature: String) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            try {
+                val response = authApi.saveVoicePrint(VoicePrintRequest(signature))
+                if (response.isSuccessful) {
+                    // Refresh authentication state now that biometrics are secured
+                    val token = tokenManager.getToken()
+                    if (token != null) {
+                        _authState.value = AuthState.Authenticated(token)
+                    } else {
+                        _authState.value = AuthState.Idle
+                    }
+                } else {
+                    _authState.value = AuthState.Error("Voice print failed to secure.")
+                }
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error("Connection error during enrollment.")
             }
         }
     }
